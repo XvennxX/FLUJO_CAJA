@@ -1,0 +1,53 @@
+{
+  "name": "sistema-flujo-caja",
+  "version": "1.0.0",
+  "description": "Sistema web de flujo de caja que digitaliza hojas Excel con FastAPI + React",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": "cd backend && uvicorn main:app --reload --port 8000",
+    "dev:frontend": "cd frontend && npm run dev",
+    "build": "cd frontend && npm run build",
+    "build:backend": "cd backend && pip install -r requirements.txt",
+    "test": "concurrently \"npm run test:backend\" \"npm run test:frontend\"",
+    "test:backend": "cd backend && pytest",
+    "test:frontend": "cd frontend && npm run test",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "docker:build": "docker-compose build",
+    "migrate": "cd backend && alembic upgrade head",
+    "migrate:generate": "cd backend && alembic revision --autogenerate -m",
+    "seed": "cd backend && python -m app.db.seed",
+    "lint": "concurrently \"npm run lint:backend\" \"npm run lint:frontend\"",
+    "lint:backend": "cd backend && black . && isort .",
+    "lint:frontend": "cd frontend && npm run lint",
+    "setup": "npm run setup:backend && npm run setup:frontend",
+    "setup:backend": "cd backend && pip install -r requirements.txt && alembic upgrade head",
+    "setup:frontend": "cd frontend && npm install"
+  },
+  "keywords": [
+    "flujo-caja",
+    "fastapi",
+    "react",
+    "typescript",
+    "postgresql",
+    "contabilidad",
+    "finanzas"
+  ],
+  "author": "Equipo Desarrollo Flujo Caja",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tu-org/sistema-flujo-caja.git"
+  },
+  "bugs": {
+    "url": "https://github.com/tu-org/sistema-flujo-caja/issues"
+  },
+  "homepage": "https://github.com/tu-org/sistema-flujo-caja#readme"
+}
