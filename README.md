@@ -1,201 +1,194 @@
-# Sistema de Flujo de Caja Web 💰
+# 💰 Sistema de Flujo de Caja Empresarial
 
-Sistema web moderno que digitaliza y automatiza los cuadros de flujo de caja tradicionalmente manejados en Excel, manteniendo la lógica contable existente pero añadiendo funcionalidades avanzadas de control, reportes y visualización.
+Sistema completo para gestión de flujo de caja empresarial desarrollado con **React** (Frontend), **FastAPI** (Backend) y **MySQL** (Base de datos).
 
-## 🎯 Objetivo
-Transformar los archivos Excel de flujo de caja (CUADROFLUJOMAYO2025.xlsx, JUNIO2025.xlsx, etc.) en un sistema web completo que permita:
-- Registro diario de transacciones por categorías
-- Cálculo automático de saldos y flujos
-- Control de acceso por roles (Tesorería, Pagaduría, Mesa de Dinero)
-- Reportes y exportaciones automatizadas
-- Visualización tipo calendario/tabla similar a Excel
+## 🏗️ Arquitectura del Proyecto
 
-## 🏗️ Arquitectura
-
-### Backend (FastAPI)
-- **API REST** con documentación automática
-- **MySQL** como base de datos principal
-- **SQLAlchemy** para ORM y migraciones
-- **JWT** para autenticación y autorización
-- **Pydantic** para validación de datos
-
-### Frontend (React + TypeScript)
-- **Vite** como bundler de desarrollo
-- **TailwindCSS** para estilos
-- **React Query** para manejo de estado del servidor
-- **React Hook Form** para formularios
-- **Chart.js/Recharts** para gráficos
-
-### Base de Datos
-```sql
--- Estructura principal
-usuarios (id, nombre, email, rol, password_hash)
-categorias (id, nombre, tipo, descripcion)
-transacciones (id, fecha, monto, categoria_id, descripcion, usuario_id)
-meses_flujo (id, mes, anio, saldo_inicial, saldo_final)
+```
+FLUJO_CAJA/
+├── Front-FC/          # 🎨 Frontend - React
+├── Backend/           # 🐍 Backend - FastAPI (Python)
+├── Database/          # 🗄️ Scripts y configuración MySQL
+├── docs/              # 📚 Documentación
+├── docker/            # 🐳 Configuración Docker
+└── config/            # ⚙️ Configuraciones
 ```
 
-## 🚀 Inicio Rápido
+## ✨ Funcionalidades
 
-### Prerrequisitos
-- Python 3.11+
-- Node.js 18+
-- MySQL 8.0+
-- Docker (opcional)
+### 🔐 Autenticación y Usuarios
+- Sistema de login/logout con JWT
+- Gestión de usuarios y roles
+- Control de permisos por rol
 
-### Configuración Backend
+### 💰 Gestión Financiera
+- **Ingresos**: Registro y seguimiento de entradas de dinero
+- **Egresos**: Control de gastos y salidas de dinero
+- **Conceptos**: Categorización de transacciones
+- **Cuentas**: Múltiples cajas/cuentas bancarias
+
+### 📊 Reportes y Análisis
+- Resumen diario de movimientos
+- Reportes mensuales y comparativos
+- Flujo de caja por períodos
+- Exportación a PDF/Excel
+
+### 🔍 Auditoría
+- Registro de todas las acciones
+- Trazabilidad por usuario
+- Historial de cambios
+
+## 🚀 Instalación y Configuración
+
+### 1. Clonar el Repositorio
 ```bash
-cd backend
+git clone https://github.com/XvennxX/FLUJO_CAJA.git
+cd FLUJO_CAJA
+```
+
+### 2. Configurar Base de Datos MySQL
+```bash
+# 1. Crear la base de datos
+mysql -u root -p < Database/scripts/create_database.sql
+
+# 2. Crear las tablas
+mysql -u root -p < Database/scripts/tables.sql
+
+# 3. Crear índices
+mysql -u root -p < Database/scripts/indexes.sql
+
+# 4. Crear vistas
+mysql -u root -p < Database/scripts/views.sql
+
+# 5. Cargar datos iniciales
+mysql -u root -p < Database/seeds/initial_data.sql
+```
+
+### 3. Configurar Backend (FastAPI)
+```bash
+cd Backend
+
+# Crear entorno virtual
 python -m venv venv
 venv\Scripts\activate  # Windows
+# source venv/bin/activate  # Linux/Mac
+
+# Instalar dependencias
 pip install -r requirements.txt
-alembic upgrade head
-uvicorn main:app --reload
+
+# Configurar variables de entorno
+copy ..\config\development.env .env
+
+# Ejecutar servidor de desarrollo
+python main.py
 ```
 
-### Configuración Frontend
+### 4. Configurar Frontend (React)
 ```bash
-cd frontend
+cd Front-FC
+
+# Instalar dependencias
 npm install
-npm run dev
+
+# Configurar variables de entorno
+# Crear archivo .env.local con:
+# REACT_APP_API_URL=http://localhost:8000
+
+# Ejecutar servidor de desarrollo
+npm start
 ```
 
-### Con Docker
-```bash
-docker-compose up -d
-```
+## 🔧 Tecnologías Utilizadas
 
-## 📊 Funcionalidades Principales
+### Backend
+- **FastAPI**: Framework web moderno y rápido
+- **SQLAlchemy**: ORM para base de datos
+- **Pydantic**: Validación de datos
+- **JWT**: Autenticación segura
+- **MySQL**: Base de datos relacional
 
-### ✅ Equivalencia Excel → Web
-| Excel | Sistema Web |
-|-------|-------------|
-| Hoja por mes | Vista mensual con calendario interactivo |
-| Columnas por días | Tabla dinámica con días del mes |
-| Filas por categorías | Sistema de categorías configurable |
-| Fórmulas de suma | Cálculos automáticos en backend |
-| Saldo acumulado | Tracking automático de saldos diarios |
+### Frontend
+- **React**: Librería para interfaces de usuario
+- **TypeScript**: Tipado estático
+- **Material-UI**: Componentes de interfaz
+- **Axios**: Cliente HTTP
 
-### ✅ Nuevas Capacidades
-- **Dashboard ejecutivo** con métricas clave
-- **Importación de Excel** históricos
-- **Exportación** a PDF y Excel
-- **Proyecciones** de flujo futuro
-- **Alertas** de saldos negativos
-- **Auditoría** completa de cambios
-- **Reportes personalizados** por período y categoría
+### DevOps
+- **Docker**: Contenedorización
+- **Docker Compose**: Orquestación de servicios
+- **Git**: Control de versiones
 
-## 👥 Roles y Permisos
+## 📊 API Endpoints
 
-### 🏦 Tesorería
-- Acceso completo al sistema
-- Puede ver y editar todas las transacciones
-- Gestión de usuarios y configuraciones
-- Cierre de períodos mensuales
+### Autenticación
+- `POST /api/v1/auth/login` - Iniciar sesión
+- `POST /api/v1/auth/logout` - Cerrar sesión
 
-### 💰 Pagaduría  
-- Solo egresos relacionados con nómina y proveedores
-- No puede ver ingresos o movimientos de tesorería
-- Acceso limitado a reportes de su área
+### Usuarios
+- `GET /api/v1/usuarios` - Listar usuarios
+- `POST /api/v1/usuarios` - Crear usuario
+- `GET /api/v1/usuarios/{id}` - Obtener usuario
+- `PUT /api/v1/usuarios/{id}` - Actualizar usuario
+- `PATCH /api/v1/usuarios/{id}/estado` - Cambiar estado
 
-### 📊 Mesa de Dinero
-- Solo lectura y consultas
-- Generación de reportes
-- Dashboard de análisis y proyecciones
+### Transacciones
+- `GET/POST /api/v1/ingresos` - Gestionar ingresos
+- `GET/POST /api/v1/egresos` - Gestionar egresos
+- `GET/POST /api/v1/conceptos` - Gestionar conceptos
+- `GET/POST /api/v1/cuentas` - Gestionar cuentas
 
-## 🛠️ Desarrollo
+### Reportes
+- `GET /api/v1/reportes/diario` - Resumen diario
+- `GET /api/v1/reportes/mensual` - Resumen mensual
+- `GET /api/v1/reportes/flujo` - Flujo de caja
+- `GET /api/v1/reportes/exportar` - Exportar datos
 
-### Estructura del Proyecto
-```
-FLUJO_CAJA2/
-├── backend/
-│   ├── app/
-│   │   ├── models/      # Modelos SQLAlchemy
-│   │   ├── schemas/     # Schemas Pydantic
-│   │   ├── routers/     # Endpoints API
-│   │   ├── services/    # Lógica de negocio
-│   │   └── core/        # Configuración y utilidades
-│   ├── alembic/         # Migraciones de BD
-│   └── tests/           # Tests del backend
-├── frontend/
-│   ├── src/
-│   │   ├── components/  # Componentes React
-│   │   ├── pages/       # Páginas principales
-│   │   ├── hooks/       # Custom hooks
-│   │   ├── services/    # Llamadas API
-│   │   └── types/       # Tipos TypeScript
-│   └── public/          # Assets estáticos
-├── database/
-│   ├── init.sql         # Script inicial
-│   └── seeds/           # Datos de prueba
-└── docs/
-    ├── api.md           # Documentación API
-    └── deployment.md    # Guía de despliegue
-```
+## 🧪 Testing
 
-### Scripts Disponibles
 ```bash
 # Backend
-npm run dev:backend    # Desarrollo con recarga automática
-npm run test:backend   # Tests unitarios
-npm run migrate        # Ejecutar migraciones
+cd Backend
+pytest
 
-# Frontend  
-npm run dev:frontend   # Servidor de desarrollo
-npm run build         # Build de producción
-npm run test:frontend # Tests con Vitest
-
-# Full Stack
-npm run dev           # Backend + Frontend simultáneo
-npm run docker:up     # Levantar con Docker
+# Frontend
+cd Front-FC
+npm test
 ```
 
-## 📈 Roadmap
+## 📖 Documentación
 
-### Fase 1 - Core (4 semanas)
-- [x] Estructura del proyecto
-- [ ] Modelos de base de datos
-- [ ] API básica CRUD
-- [ ] Autenticación y autorización
-- [ ] Frontend básico con formularios
+- **API Documentation**: http://localhost:8000/docs (Swagger UI)
+- **ReDoc**: http://localhost:8000/redoc
+- **Documentación técnica**: `docs/` folder
 
-### Fase 2 - Business Logic (3 semanas)
-- [ ] Cálculos de flujo de caja
-- [ ] Vista tipo Excel
-- [ ] Importación de archivos históricos
-- [ ] Sistema de roles completo
+## 🐳 Docker
 
-### Fase 3 - Advanced Features (3 semanas)
-- [ ] Dashboard con gráficos
-- [ ] Reportes avanzados
-- [ ] Exportaciones automáticas
-- [ ] Proyecciones y alertas
+```bash
+# Desarrollo
+docker-compose -f docker/docker-compose.yml -f docker/docker-compose.dev.yml up
 
-### Fase 4 - Production (2 semanas)
-- [ ] Optimización de performance
-- [ ] Tests completos
-- [ ] Documentación
-- [ ] Despliegue en producción
+# Producción
+docker-compose -f docker/docker-compose.yml -f docker/docker-compose.prod.yml up -d
+```
 
-## 🤝 Contribución
+## 👥 Contribución
 
-1. Fork del repositorio
-2. Crear rama feature (`git checkout -b feature/nueva-funcionalidad`)
-3. Commit cambios (`git commit -am 'Añadir nueva funcionalidad'`)
+1. Fork el proyecto
+2. Crear una rama feature (`git checkout -b feature/nueva-funcionalidad`)
+3. Commit los cambios (`git commit -am 'Agregar nueva funcionalidad'`)
 4. Push a la rama (`git push origin feature/nueva-funcionalidad`)
-5. Crear Pull Request
+5. Crear un Pull Request
 
 ## 📝 Licencia
 
 Este proyecto está bajo la Licencia MIT - ver el archivo [LICENSE](LICENSE) para detalles.
 
-## 📞 Soporte
+## 📞 Contacto
 
-Para soporte técnico o preguntas sobre el sistema:
-- 📧 Email: soporte@flujocaja.com
-- 📱 WhatsApp: +57 xxx xxx xxxx
-- 💬 Slack: #flujo-caja-soporte
+- **Autor**: XvennxX
+- **Repositorio**: https://github.com/XvennxX/FLUJO_CAJA
+- **Issues**: https://github.com/XvennxX/FLUJO_CAJA/issues
 
 ---
 
-**Desarrollado con ❤️ para modernizar la gestión financiera**
+⭐ Si este proyecto te resulta útil, ¡dale una estrella!

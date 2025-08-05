@@ -1,0 +1,60 @@
+version: '3.8'
+
+services:
+  # Base de datos MySQL
+  mysql:
+    image: mysql:8.0
+    container_name: flujo_caja_mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root123
+      MYSQL_DATABASE: flujo_caja
+      MYSQL_USER: flujo_user
+      MYSQL_PASSWORD: flujo_pass
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./Database/scripts:/docker-entrypoint-initdb.d
+    networks:
+      - flujo_network
+
+  # Backend API
+  backend:
+    build:
+      context: ./Backend
+      dockerfile: ../docker/Dockerfile.backend
+    container_name: flujo_caja_backend
+    environment:
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_USER=flujo_user
+      - DB_PASSWORD=flujo_pass
+      - DB_NAME=flujo_caja
+    ports:
+      - "8000:8000"
+    depends_on:
+      - mysql
+    volumes:
+      - ./Backend:/app
+    networks:
+      - flujo_network
+
+  # Frontend (opcional, cuando esté listo)
+  # frontend:
+  #   build:
+  #     context: ./Front-FC
+  #     dockerfile: ../docker/Dockerfile.frontend
+  #   container_name: flujo_caja_frontend
+  #   ports:
+  #     - "3000:3000"
+  #   depends_on:
+  #     - backend
+  #   networks:
+  #     - flujo_network
+
+volumes:
+  mysql_data:
+
+networks:
+  flujo_network:
+    driver: bridge

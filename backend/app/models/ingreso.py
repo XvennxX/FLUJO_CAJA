@@ -1,0 +1,17 @@
+from sqlalchemy import Column, Integer, ForeignKey, Date, DECIMAL, String
+from sqlalchemy.orm import relationship
+from app.core.database import Base
+
+class Ingreso(Base):
+    __tablename__ = "ingreso"
+    
+    id_ingreso = Column(Integer, primary_key=True, autoincrement=True)
+    fecha = Column(Date, nullable=False)
+    valor = Column(DECIMAL(15, 2), nullable=False)
+    observaciones = Column(String(255))
+    id_concepto = Column(Integer, ForeignKey("concepto.id_concepto"), nullable=False)
+    id_cuenta = Column(Integer, ForeignKey("cuenta.id_cuenta"), nullable=False)
+    
+    # Relaciones
+    concepto = relationship("Concepto", back_populates="ingresos")
+    cuenta = relationship("Cuenta", back_populates="ingresos")

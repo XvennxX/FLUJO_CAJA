@@ -1,13 +1,21 @@
-"""
-Modelos SQLAlchemy para el sistema de flujo de caja
-"""
+# Modelos de SQLAlchemy
 
-from app.core.database import Base
-
-# Importar todos los modelos aquí para que SQLAlchemy los reconozca
+# Importar todos los modelos para que SQLAlchemy los registre
 from .usuario import Usuario
-from .categoria import Categoria  
-from .transaccion import Transaccion
-from .mes_flujo import MesFlujo
+from .rol import Rol
+from .cuenta import Cuenta
+from .concepto import Concepto
+from .ingreso import Ingreso
+from .egreso import Egreso
+from .auditoria import Auditoria
 
-__all__ = ["Base", "Usuario", "Categoria", "Transaccion", "MesFlujo"]
+# Exportar todos los modelos
+__all__ = [
+    "Usuario",
+    "Rol", 
+    "Cuenta",
+    "Concepto",
+    "Ingreso",
+    "Egreso",
+    "Auditoria"
+]

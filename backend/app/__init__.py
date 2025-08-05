@@ -1,1 +1,1 @@
-# Backend del Sistema de Flujo de Caja
+# Módulo principal de la aplicación

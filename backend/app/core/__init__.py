@@ -1,1 +1,1 @@
-# Configuración core del sistema
+# Configuración y utilidades del core

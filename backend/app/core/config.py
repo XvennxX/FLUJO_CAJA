@@ -1,80 +1,46 @@
-"""
-Configuración global del sistema de flujo de caja
-"""
-
 from pydantic_settings import BaseSettings
-from typing import List
+from typing import List, Optional, Union
 import os
 
-
 class Settings(BaseSettings):
-    """Configuración principal de la aplicación"""
+    # Información del proyecto
+    PROJECT_NAME: str = "Flujo de Caja API"
+    VERSION: str = "1.0.0"
+    API_V1_STR: str = "/api/v1"
     
-    # Información de la aplicación
-    APP_NAME: str = "Sistema de Flujo de Caja"
-    APP_VERSION: str = "1.0.0"
-    DEBUG: bool = True
+    # Base de datos
+    DB_HOST: str = "localhost"
+    DB_PORT: int = 3306
+    DB_USER: str = "root"
+    DB_PASSWORD: str = ""
+    DB_NAME: str = "flujo_caja"
     
-    # Base de datos MySQL
-    DATABASE_URL: str = "mysql+pymysql://flujo_user:flujo_pass_2025@localhost:3306/flujo_caja_db"
+    # URL de conexión a MySQL
+    @property
+    def DATABASE_URL(self) -> str:
+        return f"mysql+pymysql://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
     
-    # Seguridad JWT
-    SECRET_KEY: str = "flujo_caja_secret_key_super_secure_2025_change_in_production"
+    # Seguridad
+    SECRET_KEY: str = "tu_clave_secreta_muy_segura_cambiar_en_produccion"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     
-    # CORS
-    ALLOWED_HOSTS: List[str] = [
-        "http://localhost:3000",
-        "http://localhost:3001", 
-        "http://127.0.0.1:3000",
-        "http://127.0.0.1:3001"
-    ]
+    # CORS - manejar como string y convertir a lista
+    BACKEND_CORS_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000,http://localhost:8080,http://127.0.0.1:8080"
     
-    # Archivos y uploads
-    UPLOAD_DIR: str = "uploads"
-    MAX_FILE_SIZE: int = 10 * 1024 * 1024  # 10MB
-    ALLOWED_EXTENSIONS: List[str] = [".xlsx", ".xls", ".csv"]
+    @property
+    def CORS_ORIGINS(self) -> List[str]:
+        """Convertir string de CORS origins a lista"""
+        if isinstance(self.BACKEND_CORS_ORIGINS, str):
+            return [origin.strip() for origin in self.BACKEND_CORS_ORIGINS.split(",")]
+        return self.BACKEND_CORS_ORIGINS
     
-    # Redis (opcional)
-    REDIS_URL: str = "redis://localhost:6379"
-    
-    # Email (para notificaciones)
-    SMTP_HOST: str = ""
-    SMTP_PORT: int = 587
-    SMTP_USER: str = ""
-    SMTP_PASSWORD: str = ""
-    
-    # Configuración de reportes
-    REPORTS_DIR: str = "reports"
+    # Configuración adicional
+    DEBUG: bool = True
     
     class Config:
         env_file = ".env"
         case_sensitive = True
 
-
 # Instancia global de configuración
 settings = Settings()
-
-
-# Configuraciones específicas por ambiente
-class DevelopmentSettings(Settings):
-    DEBUG: bool = True
-    DATABASE_URL: str = "postgresql://flujo_user:flujo_pass_2025@localhost:5432/flujo_caja_dev"
-
-
-class ProductionSettings(Settings):
-    DEBUG: bool = False
-    # En producción estas variables deben venir del environment
-    DATABASE_URL: str = os.getenv("DATABASE_URL", "")
-    SECRET_KEY: str = os.getenv("SECRET_KEY", "")
-
-
-def get_settings():
-    """Factory para obtener configuración según el ambiente"""
-    env = os.getenv("ENVIRONMENT", "development").lower()
-    
-    if env == "production":
-        return ProductionSettings()
-    else:
-        return DevelopmentSettings()
