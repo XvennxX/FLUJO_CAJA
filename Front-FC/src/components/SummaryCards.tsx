@@ -52,7 +52,7 @@ const SummaryCards: React.FC<SummaryCardsProps> = ({ summary }) => {
         return (
           <div
             key={index}
-            className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 hover:shadow-md transition-shadow duration-200"
+            className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 p-6 hover:shadow-md transition-shadow duration-200"
           >
             <div className="flex items-center justify-between mb-4">
               <div className={`p-3 rounded-lg ${card.color} shadow-lg`}>
@@ -60,7 +60,7 @@ const SummaryCards: React.FC<SummaryCardsProps> = ({ summary }) => {
               </div>
             </div>
             <div className="space-y-1">
-              <p className="text-sm font-medium text-gray-600">{card.title}</p>
+              <p className="text-sm font-medium text-gray-600 dark:text-gray-400">{card.title}</p>
               <p className={`text-2xl font-bold ${card.textColor}`}>
                 {formatCurrency(card.value)}
               </p>

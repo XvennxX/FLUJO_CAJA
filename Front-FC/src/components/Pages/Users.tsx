@@ -125,7 +125,7 @@ const Users: React.FC = () => {
       case 'Mesa de Dinero':
         return 'bg-orange-100 text-orange-800';
       default:
-        return 'bg-gray-100 text-gray-800';
+        return 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200';
     }
   };
 
@@ -133,47 +133,47 @@ const Users: React.FC = () => {
     <div className="space-y-6">
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 p-6">
           <div className="flex items-center justify-between mb-4">
             <div className="p-3 rounded-lg bg-gradient-to-r from-bolivar-500 to-bolivar-600">
               <UsersIcon className="h-6 w-6 text-white" />
             </div>
           </div>
           <div>
-            <p className="text-sm font-medium text-gray-600">Total Usuarios</p>
+            <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Total Usuarios</p>
             <p className="text-2xl font-bold text-bolivar-600">{totalUsers}</p>
           </div>
         </div>
 
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 p-6">
           <div className="flex items-center justify-between mb-4">
             <div className="p-3 rounded-lg bg-gradient-to-r from-bolivar-600 to-bolivar-700">
               <Shield className="h-6 w-6 text-white" />
             </div>
           </div>
           <div>
-            <p className="text-sm font-medium text-gray-600">Usuarios Activos</p>
+            <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Usuarios Activos</p>
             <p className="text-2xl font-bold text-bolivar-600">{activeUsers}</p>
           </div>
         </div>
 
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 p-6">
           <div className="flex items-center justify-between mb-4">
             <div className="p-3 rounded-lg bg-gradient-to-r from-gold-500 to-gold-600">
               <Mail className="h-6 w-6 text-white" />
             </div>
           </div>
           <div>
-            <p className="text-sm font-medium text-gray-600">Roles Activos</p>
+            <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Roles Activos</p>
             <p className="text-2xl font-bold text-gold-600">4</p>
           </div>
         </div>
       </div>
 
       {/* Users Management */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 p-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
-          <h3 className="text-lg font-semibold text-gray-900">Gestión de Usuarios</h3>
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Gestión de Usuarios</h3>
           <button 
             onClick={handleCreateUser}
             className="bg-gradient-to-r from-bolivar-500 to-bolivar-600 text-white px-4 py-2 rounded-lg hover:from-bolivar-600 hover:to-bolivar-700 transition-all flex items-center space-x-2"
@@ -192,7 +192,7 @@ const Users: React.FC = () => {
               placeholder="Buscar usuarios..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-bolivar-500 focus:border-transparent"
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-bolivar-500 focus:border-transparent"
             />
           </div>
           
@@ -201,7 +201,7 @@ const Users: React.FC = () => {
             <select
               value={selectedRole}
               onChange={(e) => setSelectedRole(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-bolivar-500 focus:border-transparent appearance-none bg-white"
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-bolivar-500 focus:border-transparent appearance-none bg-white dark:bg-gray-800"
             >
               <option value="todos">Todos los roles</option>
               <option value="Administrador">Administrador</option>
@@ -215,7 +215,7 @@ const Users: React.FC = () => {
             <select
               value={selectedStatus}
               onChange={(e) => setSelectedStatus(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-bolivar-500 focus:border-transparent appearance-none bg-white"
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-bolivar-500 focus:border-transparent appearance-none bg-white dark:bg-gray-800"
             >
               <option value="todos">Todos los estados</option>
               <option value="active">Activos</option>
@@ -223,36 +223,36 @@ const Users: React.FC = () => {
             </select>
           </div>
           
-          <div className="flex items-center text-sm text-gray-600">
+          <div className="flex items-center text-sm text-gray-600 dark:text-gray-400">
             <span>{filteredUsers.length} de {totalUsers} usuarios</span>
           </div>
         </div>
 
         <div className="overflow-x-auto">
           <table className="w-full">
-            <thead className="bg-gray-50 border-b border-gray-200">
+            <thead className="bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Usuario
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Rol
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Estado
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Último Acceso
                 </th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Acciones
                 </th>
               </tr>
             </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
+            <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
               {filteredUsers.length > 0 ? (
                 filteredUsers.map((user) => (
-                  <tr key={user.id} className="hover:bg-gray-50 transition-colors">
+                  <tr key={user.id} className="hover:bg-gray-50 dark:bg-gray-900 transition-colors">
                     <td className="px-6 py-4">
                       <div className="flex items-center space-x-3">
                         <div className="w-10 h-10 bg-gradient-to-r from-bolivar-500 to-bolivar-600 rounded-full flex items-center justify-center">
@@ -261,8 +261,8 @@ const Users: React.FC = () => {
                           </span>
                         </div>
                         <div>
-                          <p className="text-sm font-medium text-gray-900">{user.name}</p>
-                          <p className="text-sm text-gray-500">{user.email}</p>
+                          <p className="text-sm font-medium text-gray-900 dark:text-white">{user.name}</p>
+                          <p className="text-sm text-gray-500 dark:text-gray-400">{user.email}</p>
                         </div>
                       </div>
                     </td>
@@ -283,7 +283,7 @@ const Users: React.FC = () => {
                     <td className="px-6 py-4">
                       <div className="flex items-center space-x-2">
                         <Calendar className="h-4 w-4 text-gray-400" />
-                        <span className="text-sm text-gray-900">
+                        <span className="text-sm text-gray-900 dark:text-white">
                           {new Date(user.lastLogin).toLocaleDateString('es-CO')}
                         </span>
                       </div>
@@ -314,8 +314,8 @@ const Users: React.FC = () => {
                     <div className="flex flex-col items-center space-y-3">
                       <UsersIcon className="h-12 w-12 text-gray-400" />
                       <div>
-                        <h3 className="text-sm font-medium text-gray-900 mb-1">No se encontraron usuarios</h3>
-                        <p className="text-sm text-gray-500">
+                        <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-1">No se encontraron usuarios</h3>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">
                           {searchTerm || selectedRole !== 'todos' || selectedStatus !== 'todos'
                             ? 'Intenta ajustar los filtros de búsqueda'
                             : 'No hay usuarios registrados en el sistema'
@@ -344,15 +344,15 @@ const Users: React.FC = () => {
       </div>
 
       {/* User Roles */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-6">Roles y Permisos</h3>
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 p-6">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">Roles y Permisos</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="border border-gray-200 rounded-lg p-4">
+          <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
             <div className="flex items-center space-x-3 mb-3">
               <div className="w-3 h-3 bg-purple-500 rounded-full" />
-              <h4 className="font-medium text-gray-900">Administrador</h4>
+              <h4 className="font-medium text-gray-900 dark:text-white">Administrador</h4>
             </div>
-            <ul className="text-sm text-gray-600 space-y-1">
+            <ul className="text-sm text-gray-600 dark:text-gray-400 space-y-1">
               <li>• Acceso completo al sistema</li>
               <li>• Gestión de usuarios</li>
               <li>• Configuración del sistema</li>
@@ -361,12 +361,12 @@ const Users: React.FC = () => {
             </ul>
           </div>
 
-          <div className="border border-gray-200 rounded-lg p-4">
+          <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
             <div className="flex items-center space-x-3 mb-3">
               <div className="w-3 h-3 bg-blue-500 rounded-full" />
-              <h4 className="font-medium text-gray-900">Tesorería</h4>
+              <h4 className="font-medium text-gray-900 dark:text-white">Tesorería</h4>
             </div>
-            <ul className="text-sm text-gray-600 space-y-1">
+            <ul className="text-sm text-gray-600 dark:text-gray-400 space-y-1">
               <li>• Flujo de caja diario</li>
               <li>• Gestión de cuentas</li>
               <li>• Reportes financieros</li>
@@ -375,12 +375,12 @@ const Users: React.FC = () => {
             </ul>
           </div>
 
-          <div className="border border-gray-200 rounded-lg p-4">
+          <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
             <div className="flex items-center space-x-3 mb-3">
               <div className="w-3 h-3 bg-green-500 rounded-full" />
-              <h4 className="font-medium text-gray-900">Pagaduría</h4>
+              <h4 className="font-medium text-gray-900 dark:text-white">Pagaduría</h4>
             </div>
-            <ul className="text-sm text-gray-600 space-y-1">
+            <ul className="text-sm text-gray-600 dark:text-gray-400 space-y-1">
               <li>• Gestión de pagos</li>
               <li>• Nómina y proveedores</li>
               <li>• Autorización de egresos</li>
@@ -389,12 +389,12 @@ const Users: React.FC = () => {
             </ul>
           </div>
 
-          <div className="border border-gray-200 rounded-lg p-4">
+          <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
             <div className="flex items-center space-x-3 mb-3">
               <div className="w-3 h-3 bg-orange-500 rounded-full" />
-              <h4 className="font-medium text-gray-900">Mesa de Dinero</h4>
+              <h4 className="font-medium text-gray-900 dark:text-white">Mesa de Dinero</h4>
             </div>
-            <ul className="text-sm text-gray-600 space-y-1">
+            <ul className="text-sm text-gray-600 dark:text-gray-400 space-y-1">
               <li>• Inversiones financieras</li>
               <li>• Títulos valores</li>
               <li>• Operaciones simultáneas</li>
@@ -409,3 +409,4 @@ const Users: React.FC = () => {
 };
 
 export default Users;
+

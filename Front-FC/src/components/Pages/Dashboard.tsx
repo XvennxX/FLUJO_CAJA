@@ -407,10 +407,10 @@ export default function Dashboard() {
   return (
     <div className="space-y-6">
       {/* Header con controles de fecha */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center space-x-4">
-            <h1 className="text-2xl font-bold text-gray-900">Flujo de Caja Diario</h1>
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Flujo de Caja Diario</h1>
           </div>
           
           <DatePicker 
@@ -424,14 +424,14 @@ export default function Dashboard() {
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">
             <div className="flex items-center space-x-2">
-              <Filter className="w-4 h-4 text-gray-500" />
-              <span className="text-sm font-medium text-gray-700">Filtros:</span>
+              <Filter className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Filtros:</span>
             </div>
             
             {/* Filtro de empresas - Diseño compacto */}
             <div className="flex items-center space-x-3">
               <div className="flex items-center space-x-2">
-                <span className="text-sm text-gray-600">Empresas:</span>
+                <span className="text-sm text-gray-600 dark:text-gray-400">Empresas:</span>
                 <div className="flex items-center space-x-1">
                   <span className="text-xs bg-bolivar-100 text-bolivar-700 px-2 py-1 rounded-full">
                     {Object.values(showCompany).filter(v => v).length} de {companies.length}
@@ -445,7 +445,7 @@ export default function Dashboard() {
                       }, {} as typeof showCompany);
                       setShowCompany(newState);
                     }}
-                    className="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded border text-gray-600 transition-colors"
+                    className="px-2 py-1 text-xs bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded border text-gray-600 dark:text-gray-300 transition-colors"
                   >
                     {Object.values(showCompany).every(v => v) ? 'Limpiar' : 'Todas'}
                   </button>
@@ -467,7 +467,7 @@ export default function Dashboard() {
                       className={`w-10 h-8 text-xs font-bold rounded transition-all duration-200 border ${
                         isSelected
                           ? 'bg-bolivar-500 text-white border-bolivar-600 shadow-sm' 
-                          : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'
+                          : 'bg-gray-50 dark:bg-gray-700 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600'
                       }`}
                       title={company}
                     >
@@ -493,7 +493,7 @@ export default function Dashboard() {
       </div>
 
       {/* Tabla principal */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
@@ -520,8 +520,8 @@ export default function Dashboard() {
             </thead>
             <tbody>
               {Object.entries(currentData).map(([concept, conceptData], conceptIndex) => (
-                <tr key={concept} className={`${conceptIndex % 2 === 0 ? 'bg-gray-50' : 'bg-white'} hover:bg-bolivar-50 transition-colors`}>
-                  <td className="sticky left-0 bg-inherit px-4 py-3 font-medium text-gray-900 border-r border-gray-200 z-10">
+                <tr key={concept} className={`${conceptIndex % 2 === 0 ? 'bg-gray-50 dark:bg-gray-700' : 'bg-white dark:bg-gray-800'} hover:bg-bolivar-50 dark:hover:bg-bolivar-900/20 transition-colors`}>
+                  <td className="sticky left-0 bg-inherit px-4 py-3 font-medium text-gray-900 dark:text-white border-r border-gray-200 dark:border-gray-600 z-10">
                     <div className="flex items-center space-x-2">
                       {concept.includes('INGRESO') && <div className="w-3 h-3 bg-green-500 rounded-full"></div>}
                       {concept.includes('EGRESO') && <div className="w-3 h-3 bg-red-500 rounded-full"></div>}
@@ -534,11 +534,11 @@ export default function Dashboard() {
                     return accounts.map(account => {
                       const amount = conceptData[company]?.[account] || 0;
                       return (
-                        <td key={`${company}-${account}`} className="px-4 py-3 text-right text-sm border-l border-gray-200">
+                        <td key={`${company}-${account}`} className="px-4 py-3 text-right text-sm border-l border-gray-200 dark:border-gray-700">
                           <span className={`${
                             amount > 0 ? 'text-green-600' : 
                             amount < 0 ? 'text-red-600' : 
-                            'text-gray-500'
+                            'text-gray-500 dark:text-gray-400'
                           } font-mono`}>
                             {amount !== 0 ? formatCurrency(amount) : '-'}
                           </span>
@@ -546,7 +546,7 @@ export default function Dashboard() {
                       );
                     });
                   })}
-                  <td className="px-4 py-3 text-right text-sm font-semibold border-l-2 border-gold-400 bg-gray-100">
+                  <td className="px-4 py-3 text-right text-sm font-semibold border-l-2 border-gold-400 bg-gray-100 dark:bg-gray-700">
                     {(() => {
                       const total = Object.values(conceptData).reduce((sum, companyData) => {
                         return sum + Object.values(companyData).reduce((companySum, amount) => companySum + amount, 0);
@@ -555,7 +555,7 @@ export default function Dashboard() {
                         <span className={`${
                           total > 0 ? 'text-green-600' : 
                           total < 0 ? 'text-red-600' : 
-                          'text-gray-500'
+                          'text-gray-500 dark:text-gray-400'
                         } font-mono`}>
                           {formatCurrency(total)}
                         </span>
@@ -576,23 +576,23 @@ export default function Dashboard() {
           const accounts = allAccounts[company] || [];
           
           return (
-            <div key={company} className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+            <div key={company} className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-gray-900">{company}</h3>
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{company}</h3>
                 <div className={`px-3 py-1 rounded-full text-sm font-medium ${
                   total > 0 ? 'bg-green-100 text-green-700' : 
                   total < 0 ? 'bg-red-100 text-red-700' : 
-                  'bg-gray-100 text-gray-700'
+                  'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
                 }`}>
                   {formatCurrency(total)}
                 </div>
               </div>
               
               <div className="space-y-2">
-                <div className="text-sm text-gray-600">
+                <div className="text-sm text-gray-600 dark:text-gray-400">
                   <span className="font-medium">{accounts.length}</span> cuentas activas
                 </div>
-                <div className="text-xs text-gray-500">
+                <div className="text-xs text-gray-500 dark:text-gray-400">
                   Última actualización: {new Date().toLocaleTimeString('es-CO')}
                 </div>
               </div>
@@ -603,12 +603,13 @@ export default function Dashboard() {
 
       {/* Estado vacío */}
       {Object.keys(currentData).length === 0 && (
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-12 text-center">
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-12 text-center">
           <Calendar className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 mb-2">No hay datos disponibles</h3>
-          <p className="text-gray-500">No se encontraron movimientos para la fecha seleccionada.</p>
+          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">No hay datos disponibles</h3>
+          <p className="text-gray-500 dark:text-gray-400">No se encontraron movimientos para la fecha seleccionada.</p>
         </div>
       )}
     </div>
   );
 }
+

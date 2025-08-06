@@ -22,14 +22,14 @@ const LoginForm: React.FC = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
-        <div className="bg-white rounded-2xl shadow-xl p-8">
+        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8">
           {/* Logo y título */}
           <div className="text-center mb-8">
             <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-r from-bolivar-500 to-bolivar-600 rounded-xl mb-4">
               <DollarSign className="h-8 w-8 text-white" />
             </div>
-            <h1 className="text-2xl font-bold text-gray-900 mb-2">Flujo Caja</h1>
-            <p className="text-gray-600">Sistema Web</p>
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Flujo Caja</h1>
+            <p className="text-gray-600 dark:text-gray-400">Sistema Web</p>
           </div>
 
           {/* Formulario */}
@@ -42,7 +42,7 @@ const LoginForm: React.FC = () => {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                 placeholder="tu@email.com"
                 required
               />
@@ -57,14 +57,14 @@ const LoginForm: React.FC = () => {
                   type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full px-4 py-3 pr-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-bolivar-500 focus:border-transparent transition-all"
+                  className="w-full px-4 py-3 pr-12 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-bolivar-500 focus:border-transparent transition-all"
                   placeholder="••••••••"
                   required
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:text-gray-400"
                 >
                   {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                 </button>
@@ -94,8 +94,8 @@ const LoginForm: React.FC = () => {
           </form>
 
           {/* Credenciales de prueba */}
-          <div className="mt-6 p-4 bg-gray-50 rounded-lg">
-            <p className="text-xs text-gray-600 text-center">
+          <div className="mt-6 p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
+            <p className="text-xs text-gray-600 dark:text-gray-400 text-center">
               <strong>Credenciales de prueba:</strong><br />
               Email: ana@email.com<br />
               Contraseña: password

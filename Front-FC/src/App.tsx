@@ -1,26 +1,33 @@
 import React, { useState } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { ThemeProvider } from './contexts/ThemeContext';
 import Login from './components/Pages/Login';
 import Sidebar from './components/Layout/Sidebar';
 import Header from './components/Layout/Header';
 import Dashboard from './components/Pages/Dashboard';
+import DashboardPagaduria from './components/Pages/DashboardPagaduria';
 import Conciliacion from './components/Pages/Conciliacion';
 import MonthlyFlow from './components/Pages/MonthlyFlow';
 import Reports from './components/Pages/Reports';
 import Users from './components/Pages/Users';
 import Companies from './components/Pages/Companies';
 import Auditoria from './components/Pages/Auditoria';
+import Profile from './components/Pages/Profile';
+import Settings from './components/Pages/Settings';
+import Help from './components/Pages/Help';
+import AdminPanel from './components/Pages/AdminPanel';
 
 const AppContent: React.FC = () => {
   const { user, isLoading } = useAuth();
   const [currentPage, setCurrentPage] = useState('panel');
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Cargando...</p>
+          <p className="text-gray-600 dark:text-gray-400">Cargando...</p>
         </div>
       </div>
     );
@@ -33,6 +40,9 @@ const AppContent: React.FC = () => {
   const getPageTitle = (page: string) => {
     switch (page) {
       case 'panel':
+        if (user?.role === 'pagaduria') {
+          return 'SIFCO - Panel de Pagaduría';
+        }
         return 'SIFCO - Sistema de Flujo de Caja';
       case 'conciliacion':
         return 'Conciliación Contable';
@@ -46,6 +56,14 @@ const AppContent: React.FC = () => {
         return 'Informes y Reportes';
       case 'usuarios':
         return 'Gestión de Usuarios';
+      case 'perfil':
+        return 'Mi Perfil de Usuario';
+      case 'configuracion':
+        return 'Configuración del Sistema';
+      case 'ayuda':
+        return 'Ayuda y Soporte';
+      case 'admin':
+        return 'Panel de Administración';
       default:
         return 'SIFCO - Sistema de Flujo de Caja';
     }
@@ -61,6 +79,9 @@ const AppContent: React.FC = () => {
 
     switch (page) {
       case 'panel':
+        if (user?.role === 'pagaduria') {
+          return 'Panel especializado para gestión de pagos y presupuestos';
+        }
         return currentDate;
       case 'conciliacion':
         return 'Resumen de cierres contables por compañía';
@@ -74,6 +95,14 @@ const AppContent: React.FC = () => {
         return 'Reportes detallados y análisis financiero';
       case 'usuarios':
         return 'Administración de usuarios del sistema';
+      case 'perfil':
+        return 'Gestiona tu información personal y preferencias';
+      case 'configuracion':
+        return 'Personaliza tu experiencia en SIFCO';
+      case 'ayuda':
+        return 'Encuentra respuestas y obtén asistencia';
+      case 'admin':
+        return 'Herramientas avanzadas de administración del sistema';
       default:
         return currentDate;
     }
@@ -82,6 +111,9 @@ const AppContent: React.FC = () => {
   const renderPage = () => {
     switch (currentPage) {
       case 'panel':
+        if (user?.role === 'pagaduria') {
+          return <DashboardPagaduria />;
+        }
         return <Dashboard />;
       case 'conciliacion':
         return <Conciliacion />;
@@ -95,20 +127,37 @@ const AppContent: React.FC = () => {
         return <Reports />;
       case 'usuarios':
         return <Users />;
+      case 'perfil':
+        return <Profile />;
+      case 'configuracion':
+        return <Settings />;
+      case 'ayuda':
+        return <Help />;
+      case 'admin':
+        return <AdminPanel />;
       default:
+        if (user?.role === 'pagaduria') {
+          return <DashboardPagaduria />;
+        }
         return <Dashboard />;
     }
   };
 
   return (
-    <div className="flex h-screen bg-gray-50">
-      <Sidebar currentPage={currentPage} onPageChange={setCurrentPage} />
+    <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
+      <Sidebar 
+        currentPage={currentPage} 
+        onPageChange={setCurrentPage}
+        isCollapsed={sidebarCollapsed}
+      />
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header 
           title={getPageTitle(currentPage)} 
           subtitle={getPageSubtitle(currentPage)} 
+          onPageChange={setCurrentPage}
+          onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)}
         />
-        <main className="flex-1 overflow-y-auto p-6">
+        <main className="flex-1 overflow-y-auto p-6 dark:bg-gray-900">
           {renderPage()}
         </main>
       </div>
@@ -118,9 +167,11 @@ const AppContent: React.FC = () => {
 
 function App() {
   return (
-    <AuthProvider>
-      <AppContent />
-    </AuthProvider>
+    <ThemeProvider>
+      <AuthProvider>
+        <AppContent />
+      </AuthProvider>
+    </ThemeProvider>
   );
 }
 

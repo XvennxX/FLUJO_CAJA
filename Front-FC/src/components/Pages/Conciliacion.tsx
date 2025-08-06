@@ -41,7 +41,7 @@ const Conciliacion: React.FC = () => {
       case 'confirmado':
         return <CheckCircle className="h-5 w-5 text-green-500" />;
       case 'cerrado':
-        return <Lock className="h-5 w-5 text-gray-500" />;
+        return <Lock className="h-5 w-5 text-gray-500 dark:text-gray-400" />;
       default:
         return <Clock className="h-5 w-5 text-gray-400" />;
     }
@@ -56,9 +56,9 @@ const Conciliacion: React.FC = () => {
       case 'confirmado':
         return 'bg-green-100 text-green-800 border-green-200';
       case 'cerrado':
-        return 'bg-gray-100 text-gray-800 border-gray-200';
+        return 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 border-gray-200 dark:border-gray-700';
       default:
-        return 'bg-gray-100 text-gray-800 border-gray-200';
+        return 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 border-gray-200 dark:border-gray-700';
     }
   };
 
@@ -71,8 +71,8 @@ const Conciliacion: React.FC = () => {
         <div className="flex items-center space-x-3">
           <Calculator className="h-8 w-8 text-bolivar-600" />
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Conciliación Contable</h1>
-            <p className="text-gray-600">Resumen de cierres por compañía</p>
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Conciliación Contable</h1>
+            <p className="text-gray-600 dark:text-gray-400">Resumen de cierres por compañía</p>
           </div>
         </div>
         
@@ -80,7 +80,7 @@ const Conciliacion: React.FC = () => {
           <select
             value={selectedCompany}
             onChange={(e) => setSelectedCompany(e.target.value)}
-            className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-bolivar-500 focus:border-transparent"
+            className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-bolivar-500 focus:border-transparent"
           >
             <option value="all">Todas las compañías</option>
             <option value="CAPITALIZADORA">CAPITALIZADORA</option>
@@ -146,9 +146,9 @@ const Conciliacion: React.FC = () => {
       </div>
 
       {/* Tabla de Balances por Compañía */}
-      <div className="bg-white rounded-xl shadow-lg border border-gray-200">
-        <div className="px-6 py-4 border-b border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-900 flex items-center space-x-2">
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700">
+        <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center space-x-2">
             <Building2 className="h-5 w-5" />
             <span>Detalle por Compañía</span>
           </h2>
@@ -156,35 +156,35 @@ const Conciliacion: React.FC = () => {
         
         <div className="overflow-x-auto">
           <table className="w-full">
-            <thead className="bg-gray-50">
+            <thead className="bg-gray-50 dark:bg-gray-700">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Compañía
                 </th>
-                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Pagaduría
                 </th>
-                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Tesorería
                 </th>
-                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Total
                 </th>
-                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Estado
                 </th>
-                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Acciones
                 </th>
               </tr>
             </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
+            <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
               {filteredBalances.map((balance) => (
-                <tr key={balance.company} className="hover:bg-gray-50">
+                <tr key={balance.company} className="hover:bg-gray-50 dark:hover:bg-gray-700">
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center space-x-3">
                       <Building2 className="h-5 w-5 text-gray-400" />
-                      <span className="text-sm font-medium text-gray-900">
+                      <span className="text-sm font-medium text-gray-900 dark:text-white">
                         {balance.company}
                       </span>
                     </div>
@@ -259,7 +259,7 @@ const Conciliacion: React.FC = () => {
                       {balance.status === 'confirmado' && (
                         <button
                           onClick={() => updateCompanyStatus(balance.company, 'cerrado')}
-                          className="p-1 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded"
+                          className="p-1 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-600 rounded"
                           title="Cerrar"
                         >
                           <Lock className="h-4 w-4" />
@@ -292,8 +292,8 @@ const Conciliacion: React.FC = () => {
       </div>
 
       {/* Acciones Globales */}
-      <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Acciones de Cierre</h3>
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 p-6">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Acciones de Cierre</h3>
         <div className="flex flex-wrap gap-3">
           <button
             className="flex items-center space-x-2 px-4 py-2 bg-orange-100 text-orange-800 border border-orange-300 rounded-lg hover:bg-orange-200 transition-colors"
@@ -312,7 +312,7 @@ const Conciliacion: React.FC = () => {
           </button>
           
           <button
-            className="flex items-center space-x-2 px-4 py-2 bg-gray-100 text-gray-800 border border-gray-300 rounded-lg hover:bg-gray-200 transition-colors"
+            className="flex items-center space-x-2 px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-200 transition-colors"
             onClick={cerrarTodas}
           >
             <Lock className="h-4 w-4" />
@@ -325,3 +325,5 @@ const Conciliacion: React.FC = () => {
 };
 
 export default Conciliacion;
+
+

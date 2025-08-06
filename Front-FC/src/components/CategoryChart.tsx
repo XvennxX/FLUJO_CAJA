@@ -13,10 +13,10 @@ const CategoryChart: React.FC<CategoryChartProps> = ({ categoryData, type }) => 
   const title = type === 'income' ? 'Ingresos por Categoría' : 'Gastos por Categoría';
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-      <h3 className="text-lg font-semibold text-gray-900 mb-6">{title}</h3>
+    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 p-6">
+      <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">{title}</h3>
       {filteredData.length === 0 ? (
-        <div className="text-center py-8 text-gray-500">
+        <div className="text-center py-8 text-gray-500 dark:text-gray-400">
           <p>No hay datos para mostrar</p>
         </div>
       ) : (
@@ -35,7 +35,7 @@ const CategoryChart: React.FC<CategoryChartProps> = ({ categoryData, type }) => 
                       {category.name}
                     </span>
                   </div>
-                  <span className="text-sm font-semibold text-gray-900">
+                  <span className="text-sm font-semibold text-gray-900 dark:text-white">
                     {formatCurrency(category.total)}
                   </span>
                 </div>

@@ -18,12 +18,32 @@ export const useAuth = () => {
   return context;
 };
 
-const mockUser: User = {
-  id: '1',
-  name: 'Ana García',
-  email: 'ana.garcia@email.com',
-  role: 'Tesorería',
-};
+const mockUsers: User[] = [
+  {
+    id: '1',
+    name: 'Ana García',
+    email: 'admin@bolivar.com',
+    role: 'administrador',
+  },
+  {
+    id: '2',
+    name: 'Carlos Rodríguez',
+    email: 'tesoreria@bolivar.com',
+    role: 'tesoreria',
+  },
+  {
+    id: '3',
+    name: 'María Fernández',
+    email: 'pagaduria@bolivar.com',
+    role: 'pagaduria',
+  },
+  {
+    id: '4',
+    name: 'Roberto Silva',
+    email: 'mesadinero@bolivar.com',
+    role: 'mesa_dinero',
+  }
+];
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
@@ -44,11 +64,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Simular autenticación
     await new Promise(resolve => setTimeout(resolve, 1000));
     
-    if (email === 'ana@email.com' && password === 'password') {
-      setUser(mockUser);
-      localStorage.setItem('user', JSON.stringify(mockUser));
-      setIsLoading(false);
-      return true;
+    // Verificar credenciales
+    const credentials = [
+      { email: 'admin@bolivar.com', password: 'admin123' },
+      { email: 'tesoreria@bolivar.com', password: 'tesoreria123' },
+      { email: 'pagaduria@bolivar.com', password: 'pagaduria123' },
+      { email: 'mesadinero@bolivar.com', password: 'mesa123' }
+    ];
+
+    const validCredential = credentials.find(
+      cred => cred.email === email && cred.password === password
+    );
+
+    if (validCredential) {
+      const foundUser = mockUsers.find(u => u.email === email);
+      if (foundUser) {
+        setUser(foundUser);
+        localStorage.setItem('user', JSON.stringify(foundUser));
+        setIsLoading(false);
+        return true;
+      }
     }
     
     setIsLoading(false);

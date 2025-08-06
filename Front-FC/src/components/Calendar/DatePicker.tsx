@@ -141,11 +141,11 @@ const DatePicker: React.FC<DatePickerProps> = ({
       {/* Trigger Button */}
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center space-x-3 bg-white border border-gray-300 rounded-lg px-4 py-2 hover:bg-gray-50 transition-colors"
+        className="flex items-center space-x-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 hover:bg-gray-50 dark:bg-gray-900 transition-colors"
       >
         <Calendar className="w-5 h-5 text-bolivar-600" />
         <div className="text-left">
-          <div className="text-sm font-medium text-gray-900">
+          <div className="text-sm font-medium text-gray-900 dark:text-white">
             {selectedDateObj.toLocaleDateString('es-CO', {
               weekday: 'long',
               day: 'numeric',
@@ -153,7 +153,7 @@ const DatePicker: React.FC<DatePickerProps> = ({
               year: 'numeric'
             })}
           </div>
-          <div className="text-xs text-gray-500">
+          <div className="text-xs text-gray-500 dark:text-gray-400">
             Seleccionar fecha
           </div>
         </div>
@@ -161,20 +161,20 @@ const DatePicker: React.FC<DatePickerProps> = ({
 
       {/* Calendar Dropdown */}
       {isOpen && (
-        <div className="absolute top-full left-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-lg z-50 p-4 w-80">
+        <div className="absolute top-full left-0 mt-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-50 p-4 w-80">
           {/* Header with navigation */}
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center space-x-2">
               <button
                 onClick={() => navigateYear('prev')}
-                className="p-1 hover:bg-gray-100 rounded transition-colors"
+                className="p-1 hover:bg-gray-100 dark:bg-gray-700 rounded transition-colors"
                 title="Año anterior"
               >
                 <ChevronLeft className="w-4 h-4" />
               </button>
               <button
                 onClick={() => navigateMonth('prev')}
-                className="p-1 hover:bg-gray-100 rounded transition-colors"
+                className="p-1 hover:bg-gray-100 dark:bg-gray-700 rounded transition-colors"
                 title="Mes anterior"
               >
                 <ChevronLeft className="w-4 h-4" />
@@ -182,7 +182,7 @@ const DatePicker: React.FC<DatePickerProps> = ({
             </div>
             
             <div className="text-center">
-              <div className="text-lg font-semibold text-gray-900">
+              <div className="text-lg font-semibold text-gray-900 dark:text-white">
                 {monthNames[currentMonth.getMonth()]} {currentMonth.getFullYear()}
               </div>
             </div>
@@ -190,14 +190,14 @@ const DatePicker: React.FC<DatePickerProps> = ({
             <div className="flex items-center space-x-2">
               <button
                 onClick={() => navigateMonth('next')}
-                className="p-1 hover:bg-gray-100 rounded transition-colors"
+                className="p-1 hover:bg-gray-100 dark:bg-gray-700 rounded transition-colors"
                 title="Mes siguiente"
               >
                 <ChevronRight className="w-4 h-4" />
               </button>
               <button
                 onClick={() => navigateYear('next')}
-                className="p-1 hover:bg-gray-100 rounded transition-colors"
+                className="p-1 hover:bg-gray-100 dark:bg-gray-700 rounded transition-colors"
                 title="Año siguiente"
               >
                 <ChevronRight className="w-4 h-4" />
@@ -218,7 +218,7 @@ const DatePicker: React.FC<DatePickerProps> = ({
           {/* Days of week header */}
           <div className="grid grid-cols-7 gap-1 mb-2">
             {dayNames.map(day => (
-              <div key={day} className="text-center text-xs font-medium text-gray-500 py-2">
+              <div key={day} className="text-center text-xs font-medium text-gray-500 dark:text-gray-400 py-2">
                 {day}
               </div>
             ))}
@@ -238,7 +238,7 @@ const DatePicker: React.FC<DatePickerProps> = ({
                     relative p-2 text-sm rounded transition-colors
                     ${!day.isCurrentMonth 
                       ? 'text-gray-300 cursor-not-allowed' 
-                      : 'text-gray-700 hover:bg-gray-100'
+                      : 'text-gray-700 hover:bg-gray-100 dark:bg-gray-700'
                     }
                     ${day.isSelected 
                       ? 'bg-bolivar-500 text-white hover:bg-bolivar-600' 
@@ -260,8 +260,8 @@ const DatePicker: React.FC<DatePickerProps> = ({
           </div>
 
           {/* Legend */}
-          <div className="mt-4 pt-3 border-t border-gray-200">
-            <div className="flex items-center justify-center space-x-4 text-xs text-gray-600">
+          <div className="mt-4 pt-3 border-t border-gray-200 dark:border-gray-700">
+            <div className="flex items-center justify-center space-x-4 text-xs text-gray-600 dark:text-gray-400">
               <div className="flex items-center space-x-1">
                 <div className="w-2 h-2 bg-bolivar-500 rounded-full"></div>
                 <span>Seleccionado</span>

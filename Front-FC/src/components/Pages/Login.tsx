@@ -46,7 +46,7 @@ const Login: React.FC = () => {
   return (
     <div className="min-h-screen flex relative">
       {/* Panel izquierdo - Formulario */}
-      <div className="flex-1 flex flex-col bg-gray-100">
+      <div className="flex-1 flex flex-col bg-gray-100 dark:bg-gray-700">
         {/* Header con logo */}
         <div className="p-8">
           <div className="flex items-center space-x-3">
@@ -64,29 +64,29 @@ const Login: React.FC = () => {
         {/* Formulario centrado */}
         <div className="flex-1 flex items-center justify-center px-8 pb-20">
           <div className="w-full max-w-sm">
-            <div className="bg-white rounded-lg shadow-lg border border-gray-200 p-8">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 p-8">
               <h1 className="text-xl font-medium text-bolivar-600 mb-2 text-center">
                 Iniciar Sesión
               </h1>
-              <p className="text-sm text-gray-600 mb-8 text-center">SIFCO - Sistema Web</p>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mb-8 text-center">SIFCO - Sistema Web</p>
 
               <form onSubmit={handleSubmit} className="space-y-6">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Correo electrónico
                   </label>
                   <input
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="w-full px-3 py-3 border border-gray-300 rounded-md focus:ring-1 focus:ring-bolivar-500 focus:border-bolivar-500 transition-all text-sm"
+                    className="w-full px-3 py-3 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-1 focus:ring-bolivar-500 focus:border-bolivar-500 transition-all text-sm"
                     placeholder=""
                     required
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Contraseña
                   </label>
                   <div className="relative">
@@ -94,14 +94,14 @@ const Login: React.FC = () => {
                       type={showPassword ? 'text' : 'password'}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      className="w-full px-3 py-3 pr-10 border border-gray-300 rounded-md focus:ring-1 focus:ring-bolivar-500 focus:border-bolivar-500 transition-all text-sm"
+                      className="w-full px-3 py-3 pr-10 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-1 focus:ring-bolivar-500 focus:border-bolivar-500 transition-all text-sm"
                       placeholder=""
                       required
                     />
                     <button
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:text-gray-400"
                     >
                       {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </button>
@@ -114,9 +114,9 @@ const Login: React.FC = () => {
                     type="checkbox"
                     checked={rememberMe}
                     onChange={(e) => setRememberMe(e.target.checked)}
-                    className="h-4 w-4 text-bolivar-600 focus:ring-bolivar-500 border-gray-300 rounded"
+                    className="h-4 w-4 text-bolivar-600 focus:ring-bolivar-500 border-gray-300 dark:border-gray-600 rounded"
                   />
-                  <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-700">
+                  <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-700 dark:text-gray-300">
                     Recordarme
                   </label>
                 </div>
@@ -144,12 +144,75 @@ const Login: React.FC = () => {
               </form>
 
               {/* Credenciales de prueba */}
-              <div className="mt-6 p-3 bg-gray-50 rounded-md">
-                <p className="text-xs text-gray-600 text-center">
-                  <strong>Credenciales de prueba:</strong><br />
-                  Email: ana@email.com<br />
-                  Contraseña: password
-                </p>
+              <div className="mt-6 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+                <h3 className="font-semibold text-gray-800 dark:text-gray-200 mb-3 text-center">👥 Usuarios Disponibles para Pruebas</h3>
+                <div className="space-y-3">
+                  
+                  {/* Administrador */}
+                  <div className="bg-white dark:bg-gray-800 rounded-md p-3 border-l-4 border-purple-500">
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <p className="font-medium text-gray-900 dark:text-white text-sm">🔧 Administrador</p>
+                        <p className="text-xs text-gray-600 dark:text-gray-400">Ana García - Acceso completo</p>
+                      </div>
+                      <div className="text-right text-xs">
+                        <p className="font-mono bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded mb-1">admin@bolivar.com</p>
+                        <p className="font-mono bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">admin123</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Tesorería */}
+                  <div className="bg-white dark:bg-gray-800 rounded-md p-3 border-l-4 border-blue-500">
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <p className="font-medium text-gray-900 dark:text-white text-sm">💰 Tesorería</p>
+                        <p className="text-xs text-gray-600 dark:text-gray-400">Carlos Rodríguez - Gestión financiera</p>
+                      </div>
+                      <div className="text-right text-xs">
+                        <p className="font-mono bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded mb-1">tesoreria@bolivar.com</p>
+                        <p className="font-mono bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">tesoreria123</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Pagaduría */}
+                  <div className="bg-white dark:bg-gray-800 rounded-md p-3 border-l-4 border-bolivar-500">
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <p className="font-medium text-gray-900 dark:text-white text-sm">📋 Pagaduría</p>
+                        <p className="text-xs text-gray-600 dark:text-gray-400">María Fernández - Gestión de pagos</p>
+                      </div>
+                      <div className="text-right text-xs">
+                        <p className="font-mono bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded mb-1">pagaduria@bolivar.com</p>
+                        <p className="font-mono bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">pagaduria123</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Mesa de Dinero */}
+                  <div className="bg-white dark:bg-gray-800 rounded-md p-3 border-l-4 border-orange-500">
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <p className="font-medium text-gray-900 dark:text-white text-sm">💳 Mesa de Dinero</p>
+                        <p className="text-xs text-gray-600 dark:text-gray-400">Roberto Silva - Operaciones diarias</p>
+                      </div>
+                      <div className="text-right text-xs">
+                        <p className="font-mono bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded mb-1">mesadinero@bolivar.com</p>
+                        <p className="font-mono bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">mesa123</p>
+                      </div>
+                    </div>
+                  </div>
+
+                </div>
+                
+                {/* Nota sobre permisos */}
+                <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
+                  <p className="text-xs text-blue-800">
+                    <strong>💡 Nota:</strong> Cada usuario tiene acceso a diferentes módulos según su rol. 
+                    El Administrador tiene acceso completo, mientras que otros roles tienen permisos específicos.
+                  </p>
+                </div>
               </div>
             </div>
           </div>
@@ -208,3 +271,5 @@ const Login: React.FC = () => {
 };
 
 export default Login;
+
+
