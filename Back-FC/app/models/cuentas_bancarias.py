@@ -1,14 +1,11 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Enum
-from sqlalchemy.sql import func
+from sqlalchemy import Column, Integer, String, ForeignKey, Enum
 from sqlalchemy.orm import relationship
 from ..core.database import Base
 import enum
 
-class TipoMoneda(enum.Enum):
-    COP = "COP"
-    USD = "USD"
-    EUR = "EUR"
-    OTRO = "OTRO"
+class TipoCuenta(enum.Enum):
+    CORRIENTE = "CORRIENTE"
+    AHORROS = "AHORROS"
 
 class CuentaBancaria(Base):
     __tablename__ = "cuentas_bancarias"
@@ -17,14 +14,13 @@ class CuentaBancaria(Base):
     numero_cuenta = Column(String(50), nullable=False)
     compania_id = Column(Integer, ForeignKey("companias.id"), nullable=False)
     banco_id = Column(Integer, ForeignKey("bancos.id"), nullable=False)
-    moneda = Column(Enum(TipoMoneda), nullable=False, default=TipoMoneda.COP)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    tipo_cuenta = Column(Enum(TipoCuenta), nullable=False, default=TipoCuenta.CORRIENTE)
     
     # Relaciones
     compania = relationship("Compania", back_populates="cuentas_bancarias")
     banco = relationship("Banco", back_populates="cuentas_bancarias")
     transacciones = relationship("TransaccionFlujoCaja", back_populates="cuenta")
+    monedas = relationship("CuentaMoneda", back_populates="cuenta", cascade="all, delete-orphan")
     
     def __repr__(self):
-        return f"<CuentaBancaria(id={self.id}, numero='{self.numero_cuenta}', moneda='{self.moneda}')>"
+        return f"<CuentaBancaria(id={self.id}, numero='{self.numero_cuenta}', tipo='{self.tipo_cuenta}')>"

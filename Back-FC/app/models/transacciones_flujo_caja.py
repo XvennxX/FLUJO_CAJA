@@ -1,5 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Date, DECIMAL, Text
-from sqlalchemy.sql import func
+from sqlalchemy import Column, Integer, String, ForeignKey, Date, DECIMAL, Text
 from sqlalchemy.orm import relationship
 from ..core.database import Base
 
@@ -13,8 +12,6 @@ class TransaccionFlujoCaja(Base):
     monto = Column(DECIMAL(15, 2), nullable=False)
     descripcion = Column(Text, nullable=True)
     usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=False)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     
     # Relaciones
     concepto = relationship("ConceptoFlujoCaja", back_populates="transacciones")

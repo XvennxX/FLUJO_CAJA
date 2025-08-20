@@ -36,7 +36,7 @@ export const useCompanies = () => {
       const headers = getHeaders();
       console.log('Fetching companies with headers:', headers);
       
-      const response = await fetch('http://localhost:8000/api/v1/companies/', {
+      const response = await fetch('http://localhost:8000/api/v1/companies/test', {
         headers: headers
       });
       
@@ -68,7 +68,7 @@ export const useCompanies = () => {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch('http://localhost:8000/api/v1/companies/', {
+      const response = await fetch('http://localhost:8000/api/v1/companies/test', {
         method: 'POST',
         headers: getHeaders(),
         body: JSON.stringify(companyData)
@@ -96,7 +96,7 @@ export const useCompanies = () => {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(`http://localhost:8000/api/v1/companies/${id}`, {
+      const response = await fetch(`http://localhost:8000/api/v1/companies/test/${id}`, {
         method: 'PUT',
         headers: getHeaders(),
         body: JSON.stringify(companyData)
@@ -126,7 +126,7 @@ export const useCompanies = () => {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(`http://localhost:8000/api/v1/companies/${id}`, {
+      const response = await fetch(`http://localhost:8000/api/v1/companies/test/${id}`, {
         method: 'DELETE',
         headers: getHeaders()
       });
