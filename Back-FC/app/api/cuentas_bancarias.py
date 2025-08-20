@@ -289,6 +289,45 @@ def create_bank_account_test(company_id: int, cuenta_data: CuentaBancariaCreateF
             detail=f"Error interno del servidor: {str(e)}"
         )
 
+@router.get("/all")
+def get_all_bank_accounts(db: Session = Depends(get_db)):
+    """Obtener todas las cuentas bancarias de todas las compañías"""
+    try:
+        # Consultar todas las cuentas bancarias con sus relaciones
+        cuentas = db.query(CuentaBancaria).all()
+        
+        resultado = []
+        for cuenta in cuentas:
+            # Obtener banco
+            banco = db.query(Banco).filter(Banco.id == cuenta.banco_id).first()
+            # Obtener compañía
+            compania = db.query(Compania).filter(Compania.id == cuenta.compania_id).first()
+            
+            resultado.append({
+                "id": cuenta.id,
+                "numero_cuenta": cuenta.numero_cuenta,
+                "compania_id": cuenta.compania_id,
+                "banco_id": cuenta.banco_id,
+                "monedas": [m.moneda.value for m in cuenta.monedas],
+                "tipo_cuenta": cuenta.tipo_cuenta.value if cuenta.tipo_cuenta else "CORRIENTE",
+                "banco": {
+                    "id": banco.id,
+                    "nombre": banco.nombre
+                } if banco else None,
+                "compania": {
+                    "id": compania.id,
+                    "nombre": compania.nombre
+                } if compania else None
+            })
+        
+        return resultado
+    except Exception as e:
+        print(f"Error al obtener todas las cuentas bancarias: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error interno del servidor: {str(e)}"
+        )
+
 @router.delete("/test/{account_id}")
 def delete_bank_account_test(account_id: int, db: Session = Depends(get_db)):
     """Endpoint de prueba para eliminar una cuenta bancaria"""

@@ -1,0 +1,164 @@
+2025-08-20 15:06:31,719 - INFO - SELECT DATABASE()
+2025-08-20 15:06:31,720 - INFO - [raw sql] {}
+2025-08-20 15:06:31,721 - INFO - SELECT @@sql_mode
+2025-08-20 15:06:31,722 - INFO - [raw sql] {}
+2025-08-20 15:06:31,723 - INFO - SELECT @@lower_case_table_names
+2025-08-20 15:06:31,723 - INFO - [raw sql] {}
+2025-08-20 15:06:31,724 - INFO - BEGIN (implicit)
+2025-08-20 15:06:31,724 - INFO - SELECT trm.fecha AS trm_fecha, trm.valor AS trm_valor, trm.fecha_creacion AS trm_fecha_creacion 
+FROM trm 
+WHERE trm.fecha = %(fecha_1)s 
+ LIMIT %(param_1)s
+2025-08-20 15:06:31,724 - INFO - [generated in 0.00073s] {'fecha_1': datetime.date(2025, 8, 13), 'param_1': 1}
+2025-08-20 15:06:31,733 - INFO - SELECT trm.fecha AS trm_fecha, trm.valor AS trm_valor, trm.fecha_creacion AS trm_fecha_creacion 
+FROM trm 
+WHERE trm.fecha = %(fecha_1)s 
+ LIMIT %(param_1)s
+2025-08-20 15:06:31,733 - INFO - [cached since 0.005548s ago] {'fecha_1': datetime.date(2025, 8, 14), 'param_1': 1}
+2025-08-20 15:06:31,735 - INFO - SELECT trm.fecha AS trm_fecha, trm.valor AS trm_valor, trm.fecha_creacion AS trm_fecha_creacion 
+FROM trm 
+WHERE trm.fecha = %(fecha_1)s 
+ LIMIT %(param_1)s
+2025-08-20 15:06:31,736 - INFO - [cached since 0.007973s ago] {'fecha_1': datetime.date(2025, 8, 15), 'param_1': 1}
+2025-08-20 15:06:31,737 - INFO - SELECT trm.fecha AS trm_fecha, trm.valor AS trm_valor, trm.fecha_creacion AS trm_fecha_creacion 
+FROM trm 
+WHERE trm.fecha = %(fecha_1)s 
+ LIMIT %(param_1)s
+2025-08-20 15:06:31,738 - INFO - [cached since 0.01003s ago] {'fecha_1': datetime.date(2025, 8, 16), 'param_1': 1}
+2025-08-20 15:06:31,740 - INFO - SELECT trm.fecha AS trm_fecha, trm.valor AS trm_valor, trm.fecha_creacion AS trm_fecha_creacion 
+FROM trm 
+WHERE trm.fecha = %(fecha_1)s 
+ LIMIT %(param_1)s
+2025-08-20 15:06:31,741 - INFO - [cached since 0.01274s ago] {'fecha_1': datetime.date(2025, 8, 17), 'param_1': 1}
+2025-08-20 15:06:31,744 - INFO - INSERT INTO trm (fecha, valor, fecha_creacion) VALUES (%(fecha)s, %(valor)s, CURRENT_TIMESTAMP)
+2025-08-20 15:06:31,744 - INFO - [generated in 0.00078s] [{'fecha': datetime.date(2025, 8, 13), 'valor': Decimal('4100.25')}, {'fecha': datetime.date(2025, 8, 14), 'valor': Decimal('4105.50')}, {'fecha': datetime.date(2025, 8, 15), 'valor': Decimal('4110.75')}, {'fecha': datetime.date(2025, 8, 16), 'valor': Decimal('4115.00')}, {'fecha': datetime.date(2025, 8, 17), 'valor': Decimal('4120.25')}]
+2025-08-20 15:06:31,748 - INFO - COMMIT
+2025-08-20 15:06:31,752 - INFO - BEGIN (implicit)
+2025-08-20 15:06:31,753 - INFO - SELECT trm.fecha AS trm_fecha, trm.valor AS trm_valor, trm.fecha_creacion AS trm_fecha_creacion 
+FROM trm ORDER BY trm.fecha DESC 
+ LIMIT %(param_1)s
+2025-08-20 15:06:31,754 - INFO - [generated in 0.00085s] {'param_1': 10}
+2025-08-20 15:06:31,756 - INFO - ROLLBACK
+2025-08-20 15:06:31,759 - INFO - BEGIN (implicit)
+2025-08-20 15:06:31,760 - INFO - SELECT trm.fecha AS trm_fecha, trm.valor AS trm_valor, trm.fecha_creacion AS trm_fecha_creacion 
+FROM trm 
+WHERE trm.fecha = %(fecha_1)s 
+ LIMIT %(param_1)s
+2025-08-20 15:06:31,760 - INFO - [cached since 0.03262s ago] {'fecha_1': datetime.date(2025, 8, 19), 'param_1': 1}
+2025-08-20 15:06:31,760 - INFO - INSERT INTO trm (fecha, valor, fecha_creacion) VALUES (%(fecha)s, %(valor)s, CURRENT_TIMESTAMP)
+2025-08-20 15:06:31,760 - INFO - [generated in 0.00065s] {'fecha': datetime.date(2025, 8, 19), 'valor': Decimal('4123.45')}
+2025-08-20 15:06:31,760 - INFO - COMMIT
+2025-08-20 15:06:31,768 - INFO - BEGIN (implicit)
+2025-08-20 15:06:31,770 - INFO - SELECT trm.fecha AS trm_fecha, trm.valor AS trm_valor, trm.fecha_creacion AS trm_fecha_creacion 
+FROM trm 
+WHERE trm.fecha = %(pk_1)s
+2025-08-20 15:06:31,770 - INFO - [generated in 0.00064s] {'pk_1': datetime.date(2025, 8, 19)}
+2025-08-20 15:06:31,772 - INFO - SELECT trm.fecha AS trm_fecha, trm.valor AS trm_valor, trm.fecha_creacion AS trm_fecha_creacion 
+FROM trm ORDER BY trm.fecha DESC 
+ LIMIT %(param_1)s
+2025-08-20 15:06:31,773 - INFO - [cached since 0.01925s ago] {'param_1': 5}
+2025-08-20 15:06:31,773 - INFO - SELECT trm.fecha AS trm_fecha, trm.valor AS trm_valor, trm.fecha_creacion AS trm_fecha_creacion 
+FROM trm ORDER BY trm.fecha DESC 
+ LIMIT %(param_1)s
+2025-08-20 15:06:31,773 - INFO - [cached since 0.02269s ago] {'param_1': 1}
+2025-08-20 15:06:31,778 - INFO - ROLLBACK
+2025-08-20 15:06:31,780 - INFO - Consultando TRM para fecha 2025-08-20 desde datos abiertos...
+2025-08-20 15:06:33,156 - INFO - TRM obtenida: 4036.42 para fecha 2025-08-20
+2025-08-20 15:06:33,157 - INFO - BEGIN (implicit)
+2025-08-20 15:06:33,157 - INFO - SELECT trm.fecha AS trm_fecha, trm.valor AS trm_valor, trm.fecha_creacion AS trm_fecha_creacion 
+FROM trm 
+WHERE trm.fecha = %(fecha_1)s 
+ LIMIT %(param_1)s
+2025-08-20 15:06:33,157 - INFO - [cached since 1.433s ago] {'fecha_1': datetime.date(2025, 8, 20), 'param_1': 1}
+2025-08-20 15:06:33,157 - INFO - TRM creada para fecha 2025-08-20: 4036.42
+2025-08-20 15:06:33,157 - INFO - INSERT INTO trm (fecha, valor, fecha_creacion) VALUES (%(fecha)s, %(valor)s, CURRENT_TIMESTAMP)
+2025-08-20 15:06:33,163 - INFO - [cached since 1.401s ago] {'fecha': datetime.date(2025, 8, 20), 'valor': Decimal('4036.42')}
+2025-08-20 15:06:33,166 - INFO - COMMIT
+2025-08-20 15:06:33,170 - INFO - Iniciando actualización de TRM para fecha 2025-08-20
+2025-08-20 15:06:33,170 - INFO - Consultando TRM para fecha 2025-08-20 desde datos abiertos...
+2025-08-20 15:06:34,101 - INFO - TRM obtenida: 4036.42 para fecha 2025-08-20
+2025-08-20 15:06:34,116 - INFO - BEGIN (implicit)
+2025-08-20 15:06:34,116 - INFO - SELECT trm.fecha AS trm_fecha, trm.valor AS trm_valor, trm.fecha_creacion AS trm_fecha_creacion 
+FROM trm 
+WHERE trm.fecha = %(fecha_1)s 
+ LIMIT %(param_1)s
+2025-08-20 15:06:34,117 - INFO - [cached since 2.389s ago] {'fecha_1': datetime.date(2025, 8, 20), 'param_1': 1}
+2025-08-20 15:06:34,118 - INFO - TRM actualizada para fecha 2025-08-20: 4036.42
+2025-08-20 15:06:34,118 - INFO - COMMIT
+2025-08-20 15:06:34,118 - INFO - TRM actualizada exitosamente: 2025-08-20 = 4036.42
+2025-08-20 15:10:49,460 - INFO - Iniciando actualización de TRM para fecha 2025-08-20
+2025-08-20 15:10:49,460 - INFO - Consultando TRM para fecha 2025-08-20 desde datos abiertos...
+2025-08-20 15:10:50,253 - INFO - TRM obtenida: 4036.42 para fecha 2025-08-20
+2025-08-20 15:10:50,277 - INFO - SELECT DATABASE()
+2025-08-20 15:10:50,277 - INFO - [raw sql] {}
+2025-08-20 15:10:50,277 - INFO - SELECT @@sql_mode
+2025-08-20 15:10:50,277 - INFO - [raw sql] {}
+2025-08-20 15:10:50,277 - INFO - SELECT @@lower_case_table_names
+2025-08-20 15:10:50,277 - INFO - [raw sql] {}
+2025-08-20 15:10:50,277 - INFO - BEGIN (implicit)
+2025-08-20 15:10:50,284 - INFO - SELECT trm.fecha AS trm_fecha, trm.valor AS trm_valor, trm.fecha_creacion AS trm_fecha_creacion 
+FROM trm 
+WHERE trm.fecha = %(fecha_1)s 
+ LIMIT %(param_1)s
+2025-08-20 15:10:50,285 - INFO - [generated in 0.00062s] {'fecha_1': datetime.date(2025, 8, 20), 'param_1': 1}
+2025-08-20 15:10:50,287 - INFO - TRM actualizada para fecha 2025-08-20: 4036.42
+2025-08-20 15:10:50,288 - INFO - COMMIT
+2025-08-20 15:10:50,288 - INFO - TRM actualizada exitosamente: 2025-08-20 = 4036.42
+2025-08-20 15:10:50,290 - INFO - Proceso completado exitosamente
+2025-08-20 15:13:22,136 - INFO - Consultando TRM para fecha 2025-08-20 desde datos abiertos...
+2025-08-20 15:13:23,241 - INFO - TRM obtenida: 4036.42 para fecha 2025-08-20
+2025-08-20 15:14:28,420 - INFO - INICIANDO SERVICIO DE AUTOMATIZACION TRM
+2025-08-20 15:14:28,420 - INFO - Programado para ejecutarse diariamente a las 15:15 (3:15 PM)
+2025-08-20 15:14:28,420 - INFO - MODO PRUEBA: También se ejecutará cada 2 minutos para testing
+2025-08-20 15:14:28,420 - INFO - Ejecutando verificacion inicial...
+2025-08-20 15:14:28,420 - INFO - [TEST] Verificando conectividad...
+2025-08-20 15:14:28,420 - INFO - Consultando TRM para fecha 2025-08-20 desde datos abiertos...
+2025-08-20 15:14:29,258 - INFO - TRM obtenida: 4036.42 para fecha 2025-08-20
+2025-08-20 15:14:29,258 - INFO - [EXITO] Conexion exitosa. TRM actual: 4036.42
+2025-08-20 15:14:29,258 - INFO - Servicio iniciado correctamente. Esperando horarios programados...
+2025-08-20 15:15:05,882 - INFO - Servicio detenido por usuario
+2025-08-20 15:15:35,655 - INFO - INICIANDO SERVICIO DE AUTOMATIZACION TRM
+2025-08-20 15:15:35,655 - INFO - Programado para ejecutarse diariamente a las 15:15 (3:15 PM)
+2025-08-20 15:15:35,655 - INFO - MODO PRUEBA: También se ejecutará cada 2 minutos para testing
+2025-08-20 15:15:35,655 - INFO - Ejecutando verificacion inicial...
+2025-08-20 15:15:35,655 - INFO - [TEST] Verificando conectividad...
+2025-08-20 15:15:35,655 - INFO - Consultando TRM para fecha 2025-08-20 desde datos abiertos...
+2025-08-20 15:15:37,107 - INFO - TRM obtenida: 4036.42 para fecha 2025-08-20
+2025-08-20 15:15:37,107 - INFO - [EXITO] Conexion exitosa. TRM actual: 4036.42
+2025-08-20 15:15:37,107 - INFO - Servicio iniciado correctamente. Esperando horarios programados...
+2025-08-20 15:16:15,453 - INFO - Servicio detenido por usuario
+2025-08-20 15:32:06,267 - INFO - Iniciando actualización de TRM para fecha 2025-08-21
+2025-08-20 15:32:06,267 - INFO - Consultando TRM para fecha 2025-08-21 desde datos abiertos...
+2025-08-20 15:32:07,164 - WARNING - No se encontró TRM para la fecha 2025-08-21
+2025-08-20 15:32:07,164 - INFO - Consultando TRM para fecha 2025-08-21 desde Banco de la República...
+2025-08-20 15:32:08,911 - WARNING - No se encontró TRM para la fecha 2025-08-21
+2025-08-20 15:32:08,911 - ERROR - No se pudo obtener TRM de ninguna fuente oficial
+2025-08-20 15:32:08,911 - ERROR - No se pudo obtener valor de TRM
+2025-08-20 15:32:08,911 - INFO - Iniciando actualización de TRM para fecha 2025-08-20
+2025-08-20 15:32:08,911 - INFO - Consultando TRM para fecha 2025-08-20 desde datos abiertos...
+2025-08-20 15:32:09,715 - INFO - TRM obtenida: 4036.42 para fecha 2025-08-20
+2025-08-20 15:32:09,737 - INFO - SELECT DATABASE()
+2025-08-20 15:32:09,737 - INFO - [raw sql] {}
+2025-08-20 15:32:09,737 - INFO - SELECT @@sql_mode
+2025-08-20 15:32:09,737 - INFO - [raw sql] {}
+2025-08-20 15:32:09,737 - INFO - SELECT @@lower_case_table_names
+2025-08-20 15:32:09,737 - INFO - [raw sql] {}
+2025-08-20 15:32:09,737 - INFO - BEGIN (implicit)
+2025-08-20 15:32:09,744 - INFO - SELECT trm.fecha AS trm_fecha, trm.valor AS trm_valor, trm.fecha_creacion AS trm_fecha_creacion 
+FROM trm 
+WHERE trm.fecha = %(fecha_1)s 
+ LIMIT %(param_1)s
+2025-08-20 15:32:09,744 - INFO - [generated in 0.00080s] {'fecha_1': datetime.date(2025, 8, 20), 'param_1': 1}
+2025-08-20 15:32:09,746 - INFO - TRM actualizada para fecha 2025-08-20: 4036.42
+2025-08-20 15:32:09,747 - INFO - COMMIT
+2025-08-20 15:32:09,748 - INFO - TRM actualizada exitosamente: 2025-08-20 = 4036.42
+2025-08-20 15:32:54,035 - INFO - INICIANDO SERVICIO DE AUTOMATIZACION TRM - PRODUCCION
+2025-08-20 15:32:54,035 - INFO - Programado para ejecutarse diariamente a las 19:00 (7:00 PM) - Hora Colombia
+2025-08-20 15:32:54,035 - INFO - Obtendrá la TRM para el día siguiente según Superintendencia Financiera
+2025-08-20 15:32:54,035 - INFO - Ejecutando verificacion inicial...
+2025-08-20 15:32:54,035 - INFO - [TEST] Verificando conectividad...
+2025-08-20 15:32:54,035 - INFO - Consultando TRM para fecha 2025-08-20 desde datos abiertos...
+2025-08-20 15:32:54,903 - INFO - TRM obtenida: 4036.42 para fecha 2025-08-20
+2025-08-20 15:32:54,903 - INFO - [EXITO] Conexion exitosa. TRM actual: 4036.42
+2025-08-20 15:32:54,903 - INFO - Servicio iniciado correctamente. Esperando horarios programados...
+2025-08-20 15:34:07,518 - INFO - Servicio detenido por usuario

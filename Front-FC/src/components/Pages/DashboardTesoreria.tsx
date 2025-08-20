@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Building2, Download, RefreshCw } from 'lucide-react';
 import DatePicker from '../Calendar/DatePicker';
 import { useAuth } from '../../contexts/AuthContext';
@@ -11,9 +11,55 @@ interface Concepto {
   tipo: string;
 }
 
+interface BankAccount {
+  id: number;
+  numero_cuenta: string;
+  banco: {
+    id: number;
+    nombre: string;
+  };
+  monedas: string[];
+  tipo_cuenta: string;
+  compania: {
+    id: number;
+    nombre: string;
+  };
+}
+
 const DashboardTesoreria: React.FC = () => {
   const { user } = useAuth();
   const [selectedMonth, setSelectedMonth] = useState<string>('2025-05');
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+  const [loading, setLoading] = useState(true);
+  
+  // Cargar todas las cuentas bancarias al inicializar el componente
+  useEffect(() => {
+    const loadAllBankAccounts = async () => {
+      try {
+        setLoading(true);
+        const token = localStorage.getItem('token');
+        const response = await fetch('http://localhost:8000/api/v1/bank-accounts/all', {
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token && { Authorization: `Bearer ${token}` })
+          }
+        });
+        
+        if (response.ok) {
+          const accounts = await response.json();
+          setBankAccounts(accounts);
+        } else {
+          console.error('Error loading bank accounts');
+        }
+      } catch (error) {
+        console.error('Error loading bank accounts:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadAllBankAccounts();
+  }, []);
 
   // Conceptos exactos del Excel con los códigos correctos
   const conceptos: Concepto[] = [
@@ -101,6 +147,47 @@ const DashboardTesoreria: React.FC = () => {
     return categoryColors[categoria] || 'bg-white dark:bg-gray-800';
   };
 
+  // Función para calcular el total de una fila
+  const calculateRowTotal = (concepto: Concepto) => {
+    let total = 0;
+    
+    // Valores basados en el Excel proporcionado
+    if (concepto.nombre === 'SALDO INICIAL') {
+      total += -7647.80; // CAPITALIZADORA
+      total += -10696649.83; // BOLIVAR  
+      total += 4499667.48; // COMERCIALES
+    } else if (concepto.nombre === 'INCREMENTO DE CAPITAL ENCARGOS') {
+      total += -4000.00; // CAPITALIZADORA
+      total += -4670000.00; // BOLIVAR
+      total += -12300000.00; // COMERCIALES
+    } else if (concepto.nombre === 'CONSUMO') {
+      // Valores de consumo si los hay
+      total += 0; // Por ahora 0
+    } else if (concepto.nombre === 'VENTANILLA') {
+      // Valores de ventanilla si los hay
+      total += 0; // Por ahora 0
+    } else if (concepto.nombre === 'SALDO NETO INICIAL PAGADURÍA') {
+      // Este sería la suma de los anteriores de pagaduría
+      total += 0; // Por ahora 0
+    }
+    
+    // Agregar valores de conceptos de renta fija, renta variable, etc.
+    // Por ahora estos valores están en 0, pero se pueden agregar según el Excel real
+    
+    return total;
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-bolivar-600 mx-auto mb-4"></div>
+          <p className="text-gray-600 dark:text-gray-400">Cargando cuentas bancarias...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4 p-4">
       {/* Header */}
@@ -137,6 +224,7 @@ const DashboardTesoreria: React.FC = () => {
               {/* FILA 1 - SOLO COMPAÑÍAS */}
               <tr>
                 <th colSpan={3} className="bg-white dark:bg-gray-800 border border-gray-400 dark:border-gray-500 sticky left-0 z-20 min-w-[100px]"></th>
+                {/* Primeras 3 compañías fijas de ejemplo */}
                 <th className="bg-blue-200 dark:bg-blue-800 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-900 dark:text-white font-bold text-center min-w-[120px]">
                   CAPITALIZADORA
                 </th>
@@ -146,50 +234,22 @@ const DashboardTesoreria: React.FC = () => {
                 <th className="bg-blue-200 dark:bg-blue-800 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-900 dark:text-white font-bold text-center min-w-[120px]">
                   COMERCIALES
                 </th>
-                <th className="bg-blue-200 dark:bg-blue-800 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-900 dark:text-white font-bold text-center min-w-[120px]">
-                  CAPITALIZADORA AHO
-                </th>
-                <th className="bg-blue-200 dark:bg-blue-800 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-900 dark:text-white font-bold text-center min-w-[120px]">
-                  BOLÍVAR AHO
-                </th>
-                <th className="bg-blue-200 dark:bg-blue-800 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-900 dark:text-white font-bold text-center min-w-[120px]">
-                  BOLÍVAR ARL
-                </th>
-                <th className="bg-blue-200 dark:bg-blue-800 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-900 dark:text-white font-bold text-center min-w-[120px]">
-                  COMERCIALES AHO
-                </th>
-                <th className="bg-blue-200 dark:bg-blue-800 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-900 dark:text-white font-bold text-center min-w-[120px]">
-                  CAPITALIZADORA
-                </th>
-                <th className="bg-blue-200 dark:bg-blue-800 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-900 dark:text-white font-bold text-center min-w-[120px]">
-                  BOLÍVAR
-                </th>
-                <th className="bg-blue-200 dark:bg-blue-800 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-900 dark:text-white font-bold text-center min-w-[120px]">
-                  COMERCIALES
-                </th>
-                <th className="bg-blue-200 dark:bg-blue-800 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-900 dark:text-white font-bold text-center min-w-[120px]">
-                  CAPITALIZADORA US$
-                </th>
-                <th className="bg-blue-200 dark:bg-blue-800 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-900 dark:text-white font-bold text-center min-w-[120px]">
-                  CAPITALIZADORA PESOS
-                </th>
-                <th className="bg-blue-200 dark:bg-blue-800 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-900 dark:text-white font-bold text-center min-w-[120px]">
-                  BOLÍVAR US$
-                </th>
-                <th className="bg-blue-200 dark:bg-blue-800 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-900 dark:text-white font-bold text-center min-w-[120px]">
-                  BOLÍVAR PESOS
-                </th>
-                <th className="bg-blue-200 dark:bg-blue-800 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-900 dark:text-white font-bold text-center min-w-[120px]">
-                  COMERCIALES US$
-                </th>
-                <th className="bg-blue-200 dark:bg-blue-800 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-900 dark:text-white font-bold text-center min-w-[120px]">
-                  COMERCIALES PESOS
+                {/* Compañías reales desde la base de datos */}
+                {bankAccounts.map((account) => (
+                  <th key={`company-${account.id}`} className="bg-blue-200 dark:bg-blue-800 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-900 dark:text-white font-bold text-center min-w-[120px]">
+                    {account.compania?.nombre || 'COMPAÑÍA DESCONOCIDA'}
+                  </th>
+                ))}
+                {/* Columna TOTALES */}
+                <th className="bg-green-200 dark:bg-green-800 border-2 border-green-400 dark:border-green-500 px-2 py-1 text-gray-900 dark:text-white font-bold text-center min-w-[120px]">
+                  TOTALES
                 </th>
               </tr>
 
               {/* FILA 2 - BANCOS */}
               <tr>
                 <th colSpan={3} className="bg-white dark:bg-gray-800 border border-gray-400 dark:border-gray-500 sticky left-0 z-20 min-w-[100px]"></th>
+                {/* Primeros 3 bancos fijos de ejemplo */}
                 <th className="bg-blue-100 dark:bg-blue-900/50 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-800 dark:text-gray-200 font-semibold text-center text-xs">
                   BANCO DAVIVIENDA
                 </th>
@@ -199,44 +259,15 @@ const DashboardTesoreria: React.FC = () => {
                 <th className="bg-blue-100 dark:bg-blue-900/50 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-800 dark:text-gray-200 font-semibold text-center text-xs">
                   BANCO DAVIVIENDA
                 </th>
-                <th className="bg-blue-100 dark:bg-blue-900/50 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-800 dark:text-gray-200 font-semibold text-center text-xs">
-                  BANCO DAVIVIENDA
-                </th>
-                <th className="bg-blue-100 dark:bg-blue-900/50 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-800 dark:text-gray-200 font-semibold text-center text-xs">
-                  BANCO DAVIVIENDA
-                </th>
-                <th className="bg-blue-100 dark:bg-blue-900/50 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-800 dark:text-gray-200 font-semibold text-center text-xs">
-                  BANCO DAVIVIENDA
-                </th>
-                <th className="bg-blue-100 dark:bg-blue-900/50 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-800 dark:text-gray-200 font-semibold text-center text-xs">
-                  BANCO DAVIVIENDA
-                </th>
-                <th className="bg-blue-100 dark:bg-blue-900/50 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-800 dark:text-gray-200 font-semibold text-center text-xs">
-                  BANCO REPUBLICA
-                </th>
-                <th className="bg-blue-100 dark:bg-blue-900/50 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-800 dark:text-gray-200 font-semibold text-center text-xs">
-                  BANCO REPUBLICA
-                </th>
-                <th className="bg-blue-100 dark:bg-blue-900/50 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-800 dark:text-gray-200 font-semibold text-center text-xs">
-                  BANCO REPUBLICA
-                </th>
-                <th className="bg-blue-100 dark:bg-blue-900/50 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-800 dark:text-gray-200 font-semibold text-center text-xs">
-                  CITIBANK COMP
-                </th>
-                <th className="bg-blue-100 dark:bg-blue-900/50 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-800 dark:text-gray-200 font-semibold text-center text-xs">
-                  CITIBANK COMP
-                </th>
-                <th className="bg-blue-100 dark:bg-blue-900/50 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-800 dark:text-gray-200 font-semibold text-center text-xs">
-                  CITIBANK COMP
-                </th>
-                <th className="bg-blue-100 dark:bg-blue-900/50 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-800 dark:text-gray-200 font-semibold text-center text-xs">
-                  CITIBANK COMP
-                </th>
-                <th className="bg-blue-100 dark:bg-blue-900/50 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-800 dark:text-gray-200 font-semibold text-center text-xs">
-                  CITIBANK COMP
-                </th>
-                <th className="bg-blue-100 dark:bg-blue-900/50 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-800 dark:text-gray-200 font-semibold text-center text-xs">
-                  CITIBANK COMP
+                {/* Bancos reales desde la base de datos */}
+                {bankAccounts.map((account) => (
+                  <th key={`bank-${account.id}`} className="bg-blue-100 dark:bg-blue-900/50 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-800 dark:text-gray-200 font-semibold text-center text-xs">
+                    {account.banco?.nombre || 'BANCO DESCONOCIDO'}
+                  </th>
+                ))}
+                {/* Columna TOTALES */}
+                <th className="bg-green-100 dark:bg-green-900/50 border-2 border-green-400 dark:border-green-500 px-2 py-1 text-gray-800 dark:text-gray-200 font-semibold text-center text-xs">
+                  TOTALES
                 </th>
               </tr>
 
@@ -251,6 +282,7 @@ const DashboardTesoreria: React.FC = () => {
                 <th className="bg-blue-200 dark:bg-blue-800 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-900 dark:text-white font-bold text-center sticky left-[160px] z-20 min-w-[200px]">
                   CONCEPTO
                 </th>
+                {/* Primeras 3 columnas fijas de ejemplo */}
                 <th className="bg-gray-100 dark:bg-gray-700 border border-gray-400 dark:border-gray-500 px-1 py-1 text-gray-700 dark:text-gray-300 font-medium text-center text-xs">
                   482800001257
                 </th>
@@ -260,17 +292,15 @@ const DashboardTesoreria: React.FC = () => {
                 <th className="bg-gray-100 dark:bg-gray-700 border border-gray-400 dark:border-gray-500 px-1 py-1 text-gray-700 dark:text-gray-300 font-medium text-center text-xs">
                   482800002024
                 </th>
-                <th className="bg-gray-100 dark:bg-gray-700 border border-gray-400 dark:border-gray-500 px-1 py-1 text-gray-700 dark:text-gray-300 font-medium text-center text-xs">
-                  482800001265
-                </th>
-                <th className="bg-gray-100 dark:bg-gray-700 border border-gray-400 dark:border-gray-500 px-1 py-1 text-gray-700 dark:text-gray-300 font-medium text-center text-xs">
-                  622996009-7
-                </th>
-                <th className="bg-gray-100 dark:bg-gray-700 border border-gray-400 dark:border-gray-500 px-1 py-1 text-gray-700 dark:text-gray-300 font-medium text-center text-xs">
-                  622996009-4
-                </th>
-                <th className="bg-gray-100 dark:bg-gray-700 border border-gray-400 dark:border-gray-500 px-1 py-1 text-gray-700 dark:text-gray-300 font-medium text-center text-xs">
-                  622996009-6
+                {/* Cuentas bancarias reales desde la base de datos */}
+                {bankAccounts.map((account) => (
+                  <th key={account.id} className="bg-gray-100 dark:bg-gray-700 border border-gray-400 dark:border-gray-500 px-1 py-1 text-gray-700 dark:text-gray-300 font-medium text-center text-xs">
+                    {account.numero_cuenta}
+                  </th>
+                ))}
+                {/* Columna TOTALES */}
+                <th className="bg-green-50 dark:bg-green-900 border-2 border-green-400 dark:border-green-500 px-1 py-1 text-gray-700 dark:text-gray-300 font-bold text-center text-xs">
+                  TOTALES
                 </th>
               </tr>
             </thead>
@@ -304,25 +334,19 @@ const DashboardTesoreria: React.FC = () => {
                     <span className="text-xs leading-tight">{concepto.nombre}</span>
                   </td>
 
-                  {/* CELDAS DE DATOS - Todas las compañías */}
+                  {/* CELDAS DE DATOS - Primeras 3 columnas fijas + Cuentas bancarias reales */}
+                  {/* Primeras 3 columnas fijas de ejemplo */}
                   {[
-                    'CAPITALIZADORA', 'BOLIVAR', 'COMERCIALES', 'CAPITALIZADORA_AHO', 
-                    'BOLIVAR_AHO', 'BOLIVAR_ARL', 'COMERCIALES_AHO', 
-                    'CAPITALIZADORA_REP', 'BOLIVAR_REP', 'COMERCIALES_REP',
-                    'CAPITALIZADORA_USD', 'CAPITALIZADORA_PESOS', 'BOLIVAR_USD', 
-                    'BOLIVAR_PESOS', 'COMERCIALES_USD', 'COMERCIALES_PESOS'
+                    'CAPITALIZADORA', 'BOLIVAR', 'COMERCIALES'
                   ].map((companiaNombre, compIdx) => {
                     // Datos de ejemplo basados en el Excel
                     let valor = null;
                     if (concepto.nombre === 'SALDO INICIAL' && companiaNombre === 'CAPITALIZADORA') valor = -7647.80;
-                    else if (concepto.nombre === 'SALDO INICIAL' && companiaNombre === 'SEGUROS_BOLIVAR') valor = -10696649.83;
+                    else if (concepto.nombre === 'SALDO INICIAL' && companiaNombre === 'BOLIVAR') valor = -10696649.83;
                     else if (concepto.nombre === 'SALDO INICIAL' && companiaNombre === 'COMERCIALES') valor = 4499667.48;
                     else if (concepto.nombre === 'INCREMENTO DE CAPITAL ENCARGOS' && companiaNombre === 'CAPITALIZADORA') valor = -4000.00;
-                    else if (concepto.nombre === 'INCREMENTO DE CAPITAL ENCARGOS' && companiaNombre === 'SEGUROS_BOLIVAR') valor = -4670000.00;
+                    else if (concepto.nombre === 'INCREMENTO DE CAPITAL ENCARGOS' && companiaNombre === 'BOLIVAR') valor = -4670000.00;
                     else if (concepto.nombre === 'INCREMENTO DE CAPITAL ENCARGOS' && companiaNombre === 'COMERCIALES') valor = -12300000.00;
-                    else if (concepto.nombre === 'COMISIONES' && companiaNombre === 'COMERCIALES') valor = -4251.57;
-                    else if (concepto.nombre === 'RENDIMIENTOS' && companiaNombre === 'COMERCIALES') valor = 63.65;
-                    else if (concepto.nombre === 'GMF' && companiaNombre === 'COMERCIALES') valor = -17.01;
 
                     return (
                       <td
@@ -339,12 +363,36 @@ const DashboardTesoreria: React.FC = () => {
                       </td>
                     );
                   })}
+                  
+                  {/* Columnas de cuentas bancarias reales */}
+                  {bankAccounts.map((account) => (
+                    <td
+                      key={`data-${account.id}`}
+                      className="border border-gray-400 dark:border-gray-500 px-2 py-1 text-center text-xs"
+                    >
+                      <span className="text-gray-400 dark:text-gray-500">—</span>
+                    </td>
+                  ))}
+                  
+                  {/* Columna TOTALES */}
+                  <td className="border-2 border-green-400 dark:border-green-500 px-2 py-1 text-center text-xs bg-green-50 dark:bg-green-900/20">
+                    {(() => {
+                      const total = calculateRowTotal(concepto);
+                      return total !== 0 ? (
+                        <span className={`font-bold ${total < 0 ? 'text-red-700 dark:text-red-400' : 'text-green-700 dark:text-green-400'}`}>
+                          {total < 0 ? `(${formatCurrency(Math.abs(total))})` : formatCurrency(total)}
+                        </span>
+                      ) : (
+                        <span className="text-gray-400 dark:text-gray-500">—</span>
+                      );
+                    })()}
+                  </td>
                 </tr>
               ))}
 
               {/* SEPARADOR */}
               <tr>
-                <td colSpan={18} 
+                <td colSpan={7 + bankAccounts.length} 
                     className="bg-gray-300 dark:bg-gray-600 h-2 border border-gray-400 dark:border-gray-500"></td>
               </tr>
 
@@ -355,13 +403,18 @@ const DashboardTesoreria: React.FC = () => {
                 <td className="bg-blue-200 dark:bg-blue-800/40 border border-gray-400 dark:border-gray-500 px-2 py-2 text-gray-900 dark:text-white font-bold text-center sticky left-[160px] z-20 min-w-[60px]">
                   SUB-TOTAL TESORERÍA
                 </td>
+                {/* Primeras 3 columnas fijas */}
                 <td className="border border-gray-400 dark:border-gray-500 px-2 py-2 text-center font-bold text-gray-900 dark:text-white">-4.000,00</td>
                 <td className="border border-gray-400 dark:border-gray-500 px-2 py-2 text-center font-bold text-gray-900 dark:text-white">-4.674.268,98</td>
                 <td className="border border-gray-400 dark:border-gray-500 px-2 py-2 text-center font-bold text-gray-900 dark:text-white">-12.300.000,00</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-2 py-2 text-center font-bold text-gray-900 dark:text-white">—</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-2 py-2 text-center font-bold text-gray-900 dark:text-white">—</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-2 py-2 text-center font-bold text-gray-900 dark:text-white">—</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-2 py-2 text-center font-bold text-gray-900 dark:text-white">68,83</td>
+                {/* Columnas de cuentas bancarias reales */}
+                {bankAccounts.map((account) => (
+                  <td key={`subtotal-${account.id}`} className="border border-gray-400 dark:border-gray-500 px-2 py-2 text-center font-bold text-gray-900 dark:text-white">—</td>
+                ))}
+                {/* Columna TOTALES */}
+                <td className="border-2 border-green-400 dark:border-green-500 px-2 py-2 text-center font-bold text-gray-900 dark:text-white bg-green-100 dark:bg-green-900/30">
+                  <span className="text-red-700 dark:text-red-400">(16.978.268,98)</span>
+                </td>
               </tr>
 
               {/* FILA SALDO FINAL CUENTAS */}
@@ -371,13 +424,18 @@ const DashboardTesoreria: React.FC = () => {
                 <td className="bg-gray-200 dark:bg-gray-700 border border-gray-400 dark:border-gray-500 px-2 py-2 text-gray-900 dark:text-white font-bold text-center sticky left-[160px] z-20 min-w-[200px]">
                   SALDO FINAL CUENTAS
                 </td>
+                {/* Primeras 3 columnas fijas */}
                 <td className="border border-gray-400 dark:border-gray-500 px-1 py-2 text-center text-xs text-red-600 dark:text-red-400">#REF!</td>
                 <td className="border border-gray-400 dark:border-gray-500 px-1 py-2 text-center text-xs text-red-600 dark:text-red-400">#REF!</td>
                 <td className="border border-gray-400 dark:border-gray-500 px-1 py-2 text-center text-xs text-red-600 dark:text-red-400">#REF!</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-1 py-2 text-center text-xs text-red-600 dark:text-red-400">#REF!</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-1 py-2 text-center text-xs text-red-600 dark:text-red-400">#REF!</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-1 py-2 text-center text-xs text-red-600 dark:text-red-400">#REF!</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-1 py-2 text-center text-xs text-red-600 dark:text-red-400">#REF!</td>
+                {/* Columnas de cuentas bancarias reales */}
+                {bankAccounts.map((account) => (
+                  <td key={`saldo-final-${account.id}`} className="border border-gray-400 dark:border-gray-500 px-1 py-2 text-center text-xs text-red-600 dark:text-red-400">#REF!</td>
+                ))}
+                {/* Columna TOTALES */}
+                <td className="border-2 border-green-400 dark:border-green-500 px-1 py-2 text-center text-xs text-red-600 dark:text-red-400 bg-green-50 dark:bg-green-900/20">
+                  #REF!
+                </td>
               </tr>
 
              

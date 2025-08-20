@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { BankAccount, Bank, CreateBankAccountData, UpdateBankAccountData, useBankAccounts } from '../../hooks/useBankAccounts';
 import { useToast } from '../../hooks/useToast';
 
@@ -12,8 +12,12 @@ interface BankAccountsManagerProps {
 const BankAccountsManager: React.FC<BankAccountsManagerProps> = ({ companyId, companyName, isOpen, onClose }) => {
   const [accounts, setAccounts] = useState<BankAccount[]>([]);
   const [banks, setBanks] = useState<Bank[]>([]);
+  const [showBankDropdown, setShowBankDropdown] = useState(false);
+  const [showTipoCuentaDropdown, setShowTipoCuentaDropdown] = useState(false);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [editingAccount, setEditingAccount] = useState<BankAccount | null>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const tipoCuentaDropdownRef = useRef<HTMLDivElement>(null);
   const [formData, setFormData] = useState<CreateBankAccountData>({
     numero_cuenta: '',
     banco_id: 0,
@@ -39,6 +43,23 @@ const BankAccountsManager: React.FC<BankAccountsManagerProps> = ({ companyId, co
       loadData();
     }
   }, [isOpen, companyId]);
+
+  // Cerrar dropdowns al hacer clic fuera
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setShowBankDropdown(false);
+      }
+      if (tipoCuentaDropdownRef.current && !tipoCuentaDropdownRef.current.contains(event.target as Node)) {
+        setShowTipoCuentaDropdown(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
 
   const loadData = async () => {
     try {
@@ -66,6 +87,8 @@ const BankAccountsManager: React.FC<BankAccountsManagerProps> = ({ companyId, co
     });
     setEditingAccount(null);
     setShowCreateForm(false);
+    setShowBankDropdown(false);
+    setShowTipoCuentaDropdown(false);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -192,11 +215,11 @@ const BankAccountsManager: React.FC<BankAccountsManagerProps> = ({ companyId, co
 
           {/* Formulario de crear/editar */}
           {showCreateForm && (
-            <div className="bg-gray-50 p-4 rounded-lg mb-6">
-              <h4 className="text-md font-medium text-gray-800 mb-4">
+            <div className="bg-gray-50 p-6 rounded-lg mb-6 border border-gray-200">
+              <h4 className="text-lg font-medium text-gray-800 mb-6">
                 {editingAccount ? 'Editar Cuenta Bancaria' : 'Nueva Cuenta Bancaria'}
               </h4>
-              <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <form onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Número de Cuenta *
@@ -211,32 +234,61 @@ const BankAccountsManager: React.FC<BankAccountsManagerProps> = ({ companyId, co
                   />
                 </div>
 
-                <div>
+                <div className="relative" ref={dropdownRef}>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Banco *
                   </label>
-                  <select
-                    value={formData.banco_id}
-                    onChange={(e) => setFormData(prev => ({ ...prev, banco_id: parseInt(e.target.value) }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    required
-                  >
-                    <option value={0}>Seleccione un banco</option>
-                    {banks.map(bank => (
-                      <option key={bank.id} value={bank.id}>
-                        {bank.nombre}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setShowBankDropdown(!showBankDropdown)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-left bg-white flex justify-between items-center"
+                    >
+                      <span className={formData.banco_id === 0 ? 'text-gray-500' : 'text-gray-900'}>
+                        {formData.banco_id === 0 
+                          ? 'Seleccione un banco' 
+                          : banks.find(b => b.id === formData.banco_id)?.nombre || 'Seleccione un banco'
+                        }
+                      </span>
+                      <svg className={`w-5 h-5 text-gray-400 transition-transform ${showBankDropdown ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
+                    {showBankDropdown && (
+                      <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-300 rounded-md shadow-lg z-50 max-h-60 overflow-y-auto">
+                        <div
+                          onClick={() => {
+                            setFormData(prev => ({ ...prev, banco_id: 0 }));
+                            setShowBankDropdown(false);
+                          }}
+                          className="px-3 py-2 text-gray-500 hover:bg-gray-50 cursor-pointer"
+                        >
+                          Seleccione un banco
+                        </div>
+                        {banks.map(bank => (
+                          <div
+                            key={bank.id}
+                            onClick={() => {
+                              setFormData(prev => ({ ...prev, banco_id: bank.id }));
+                              setShowBankDropdown(false);
+                            }}
+                            className="px-3 py-2 text-gray-900 hover:bg-blue-50 cursor-pointer"
+                          >
+                            {bank.nombre}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Monedas *
                   </label>
-                  <div className="space-y-2">
+                  <div className="space-y-3 p-3 border border-gray-300 rounded-md bg-gray-50">
                     {(['COP', 'USD', 'EUR'] as const).map((moneda) => (
-                      <label key={moneda} className="flex items-center">
+                      <label key={moneda} className="flex items-center cursor-pointer hover:bg-white hover:shadow-sm p-2 rounded transition-all">
                         <input
                           type="checkbox"
                           checked={formData.monedas.includes(moneda)}
@@ -253,9 +305,9 @@ const BankAccountsManager: React.FC<BankAccountsManagerProps> = ({ companyId, co
                               }));
                             }
                           }}
-                          className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          className="mr-3 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                         />
-                        <span className="text-sm text-gray-700">
+                        <span className="text-sm text-gray-700 font-medium">
                           {moneda === 'COP' ? 'Pesos Colombianos (COP)' : 
                            moneda === 'USD' ? 'Dólares Americanos (USD)' : 
                            'Euros (EUR)'}
@@ -265,33 +317,61 @@ const BankAccountsManager: React.FC<BankAccountsManagerProps> = ({ companyId, co
                   </div>
                 </div>
 
-                <div>
+                <div className="relative" ref={tipoCuentaDropdownRef}>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Tipo de Cuenta
+                    Tipo de Cuenta *
                   </label>
-                  <select
-                    value={formData.tipo_cuenta}
-                    onChange={(e) => setFormData(prev => ({ ...prev, tipo_cuenta: e.target.value as 'CORRIENTE' | 'AHORROS' }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="CORRIENTE">Cuenta Corriente</option>
-                    <option value="AHORROS">Cuenta de Ahorros</option>
-                  </select>
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setShowTipoCuentaDropdown(!showTipoCuentaDropdown)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-left bg-white flex justify-between items-center"
+                    >
+                      <span className="text-gray-900">
+                        {formData.tipo_cuenta === 'CORRIENTE' ? 'Cuenta Corriente' : 'Cuenta de Ahorros'}
+                      </span>
+                      <svg className={`w-5 h-5 text-gray-400 transition-transform ${showTipoCuentaDropdown ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
+                    {showTipoCuentaDropdown && (
+                      <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-300 rounded-md shadow-lg z-50">
+                        <div
+                          onClick={() => {
+                            setFormData(prev => ({ ...prev, tipo_cuenta: 'CORRIENTE' }));
+                            setShowTipoCuentaDropdown(false);
+                          }}
+                          className="px-3 py-2 text-gray-900 hover:bg-blue-50 cursor-pointer"
+                        >
+                          Cuenta Corriente
+                        </div>
+                        <div
+                          onClick={() => {
+                            setFormData(prev => ({ ...prev, tipo_cuenta: 'AHORROS' }));
+                            setShowTipoCuentaDropdown(false);
+                          }}
+                          className="px-3 py-2 text-gray-900 hover:bg-blue-50 cursor-pointer"
+                        >
+                          Cuenta de Ahorros
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
-                <div className="md:col-span-2">
-                  <div className="flex gap-3">
+                <div className="lg:col-span-2">
+                  <div className="flex gap-4 pt-4">
                     <button
                       type="submit"
                       disabled={loading}
-                      className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 transition-colors disabled:opacity-50"
+                      className="bg-green-600 text-white px-6 py-2 rounded-md hover:bg-green-700 transition-colors disabled:opacity-50 font-medium"
                     >
                       {loading ? 'Guardando...' : (editingAccount ? 'Actualizar' : 'Crear')}
                     </button>
                     <button
                       type="button"
                       onClick={resetForm}
-                      className="bg-gray-500 text-white px-4 py-2 rounded-md hover:bg-gray-600 transition-colors"
+                      className="bg-gray-500 text-white px-6 py-2 rounded-md hover:bg-gray-600 transition-colors font-medium"
                     >
                       Cancelar
                     </button>

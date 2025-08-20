@@ -1,12 +1,33 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Building2, Download, RefreshCw } from 'lucide-react';
 import DatePicker from '../Calendar/DatePicker';
 import { useAuth } from '../../contexts/AuthContext';
 import { formatCurrency } from '../../utils/formatters';
+import { useTRM } from '../../hooks/useTRM';
+
+interface BankAccount {
+  id: number;
+  numero_cuenta: string;
+  banco: {
+    id: number;
+    nombre: string;
+  };
+  monedas: string[];
+  tipo_cuenta: string;
+  compania: {
+    id: number;
+    nombre: string;
+  };
+}
 
 const DashboardPagaduria: React.FC = () => {
   const { user } = useAuth();
   const [selectedMonth, setSelectedMonth] = useState<string>('2025-05');
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+  const [loading, setLoading] = useState(true);
+  
+  // Hook para obtener TRM
+  const { trm, loading: trmLoading, error: trmError } = useTRM();
 
   // Conceptos exactos del Excel con los códigos correctos
   const conceptos = [
@@ -42,6 +63,66 @@ const DashboardPagaduria: React.FC = () => {
     { codigo: '', nombre: 'DIFERENCIA EN CAMBIO CTAS REASEGUROS', tipo: 'neutral' }
   ];
 
+  // Cargar todas las cuentas bancarias al inicializar el componente
+  useEffect(() => {
+    const loadAllBankAccounts = async () => {
+      try {
+        setLoading(true);
+        const token = localStorage.getItem('token');
+        const response = await fetch('http://localhost:8000/api/v1/bank-accounts/all', {
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token && { Authorization: `Bearer ${token}` })
+          }
+        });
+        
+        if (response.ok) {
+          const accounts = await response.json();
+          setBankAccounts(accounts);
+        } else {
+          console.error('Error loading bank accounts');
+        }
+      } catch (error) {
+        console.error('Error loading bank accounts:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadAllBankAccounts();
+  }, []);
+
+  // Función para calcular el total de una fila
+  const calculateRowTotal = (concepto: any) => {
+    let total = 0;
+    
+    // Para el Dashboard de Pagaduría, los totales se calculan basándose en 
+    // los valores que normalmente estarían en las cuentas bancarias reales
+    // Por ahora usamos valores de ejemplo, pero esto se debería conectar con datos reales
+    
+    if (concepto.nombre === 'INGRESO') {
+      // Ejemplo: suma de ingresos de todas las cuentas bancarias
+      total += 27138180.25; // Total estimado de ingresos
+    } else if (concepto.nombre === 'CONSUMO NACIONAL') {
+      total += -184925.32; // Total estimado de consumo nacional
+    } else if (concepto.nombre === 'RECAUDOS LIBERTADOR') {
+      total += 148715.11; // Total de recaudos
+    } else if (concepto.nombre === 'EMBARGOS') {
+      total += -51577.82; // Total de embargos
+    } else if (concepto.nombre === 'OTROS PAGOS') {
+      total += -148505.71; // Total de otros pagos
+    } else if (concepto.nombre === 'VENTAN PROVEEDORES') {
+      total += -7026234.33; // Total de pagos a proveedores
+    } else if (concepto.nombre === 'NOMINA ADMINISTRATIVA') {
+      total += 142.35; // Total nómina administrativa
+    }
+    
+    // En una implementación real, esto debería iterar sobre bankAccounts
+    // y sumar los valores reales de cada cuenta para el concepto específico
+    
+    return total;
+  };
+
   const getRowColor = (tipo: string) => {
     switch (tipo) {
       case 'ingreso':
@@ -53,6 +134,17 @@ const DashboardPagaduria: React.FC = () => {
     }
   };
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-bolivar-600 mx-auto mb-4"></div>
+          <p className="text-gray-600 dark:text-gray-400">Cargando cuentas bancarias...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4 p-4">
       {/* Header */}
@@ -62,6 +154,24 @@ const DashboardPagaduria: React.FC = () => {
           <div>
             <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Panel de Pagaduría</h1>
             <p className="text-gray-600 dark:text-gray-400">Flujo de caja por compañías - {user?.name}</p>
+            {/* Indicador TRM */}
+            <div className="flex items-center space-x-2 mt-1">
+              <span className="text-sm text-gray-500 dark:text-gray-400">TRM:</span>
+              {trmLoading ? (
+                <span className="text-sm text-gray-400">Cargando...</span>
+              ) : trmError ? (
+                <span className="text-sm text-red-500" title={trmError}>Error al cargar TRM</span>
+              ) : trm ? (
+                <div className="flex items-center space-x-1">
+                  <span className="text-sm font-semibold text-blue-600 dark:text-blue-400">
+                    ${parseFloat(trm.valor.toString()).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                  <span className="text-xs text-gray-400">({new Date(trm.fecha).toLocaleDateString('es-CO')})</span>
+                </div>
+              ) : (
+                <span className="text-sm text-gray-400">N/A</span>
+              )}
+            </div>
           </div>
         </div>
         
@@ -88,108 +198,33 @@ const DashboardPagaduria: React.FC = () => {
             <thead>
               {/* FILA 1 - SOLO COMPAÑÍAS */}
               <tr>
-                <th colSpan={2} className="bg-white dark:bg-gray-800 border border-gray-400 dark:border-gray-500"></th>
-                <th className="bg-blue-200 dark:bg-blue-800 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-900 dark:text-white font-bold text-center min-w-[120px]">
-                  CAPITALIZADORA
-                </th>
-                <th className="bg-blue-200 dark:bg-blue-800 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-900 dark:text-white font-bold text-center min-w-[120px]">
-                  BOLIVAR
-                </th>
-                <th className="bg-blue-200 dark:bg-blue-800 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-900 dark:text-white font-bold text-center min-w-[120px]">
-                  COMERCIALES
-                </th>
-                <th className="bg-blue-2
-                00 dark:bg-blue-800 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-900 dark:text-white font-bold text-center min-w-[120px]">
-                  CAPITALIZADORA AHO
-                </th>
-                <th className="bg-blue-200 dark:bg-blue-800 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-900 dark:text-white font-bold text-center min-w-[120px]">
-                  BOLÍVAR AHO
-                </th>
-                <th className="bg-blue-200 dark:bg-blue-800 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-900 dark:text-white font-bold text-center min-w-[120px]">
-                  BOLÍVAR ARL
-                </th>
-                <th className="bg-blue-200 dark:bg-blue-800 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-900 dark:text-white font-bold text-center min-w-[120px]">
-                  COMERCIALES AHO
-                </th>
-                <th className="bg-blue-200 dark:bg-blue-800 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-900 dark:text-white font-bold text-center min-w-[120px]">
-                  CAPITALIZADORA
-                </th>
-                <th className="bg-blue-200 dark:bg-blue-800 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-900 dark:text-white font-bold text-center min-w-[120px]">
-                  BOLÍVAR
-                </th>
-                <th className="bg-blue-200 dark:bg-blue-800 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-900 dark:text-white font-bold text-center min-w-[120px]">
-                  COMERCIALES
-                </th>
-                <th className="bg-blue-200 dark:bg-blue-800 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-900 dark:text-white font-bold text-center min-w-[120px]">
-                  CAPITALIZADORA US$
-                </th>
-                <th className="bg-blue-200 dark:bg-blue-800 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-900 dark:text-white font-bold text-center min-w-[120px]">
-                  CAPITALIZADORA PESOS
-                </th>
-                <th className="bg-blue-200 dark:bg-blue-800 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-900 dark:text-white font-bold text-center min-w-[120px]">
-                  BOLÍVAR US$
-                </th>
-                <th className="bg-blue-200 dark:bg-blue-800 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-900 dark:text-white font-bold text-center min-w-[120px]">
-                  BOLÍVAR PESOS
-                </th>
-                <th className="bg-blue-200 dark:bg-blue-800 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-900 dark:text-white font-bold text-center min-w-[120px]">
-                  COMERCIALES US$
-                </th>
-                <th className="bg-blue-200 dark:bg-blue-800 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-900 dark:text-white font-bold text-center min-w-[120px]">
-                  COMERCIALES PESOS
+                <th className="bg-white dark:bg-gray-800 border border-gray-400 dark:border-gray-500 sticky left-0 z-20 min-w-[60px]"></th>
+                <th className="bg-white dark:bg-gray-800 border border-gray-400 dark:border-gray-500 sticky left-[60px] z-20 min-w-[200px]"></th>
+                {/* Compañías reales desde la base de datos - empiezan desde la tercera columna */}
+                {bankAccounts.map((account) => (
+                  <th key={`company-${account.id}`} className="bg-blue-200 dark:bg-blue-800 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-900 dark:text-white font-bold text-center min-w-[120px]">
+                    {account.compania?.nombre || 'COMPAÑÍA DESCONOCIDA'}
+                  </th>
+                ))}
+                {/* Columna TOTALES */}
+                <th className="bg-green-200 dark:bg-green-800 border-2 border-green-400 dark:border-green-500 px-2 py-1 text-gray-900 dark:text-white font-bold text-center min-w-[120px]">
+                  TOTALES
                 </th>
               </tr>
 
               {/* FILA 2 - BANCOS */}
               <tr>
-                <th colSpan={2} className="bg-white dark:bg-gray-800 border border-gray-400 dark:border-gray-500"></th>
-                <th className="bg-blue-100 dark:bg-blue-900/50 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-800 dark:text-gray-200 font-semibold text-center text-xs">
-                  BANCO DAVIVIENDA
-                </th>
-                <th className="bg-blue-100 dark:bg-blue-900/50 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-800 dark:text-gray-200 font-semibold text-center text-xs">
-                  BANCO DAVIVIENDA
-                </th>
-                <th className="bg-blue-100 dark:bg-blue-900/50 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-800 dark:text-gray-200 font-semibold text-center text-xs">
-                  BANCO DAVIVIENDA
-                </th>
-                <th className="bg-blue-100 dark:bg-blue-900/50 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-800 dark:text-gray-200 font-semibold text-center text-xs">
-                  BANCO DAVIVIENDA
-                </th>
-                <th className="bg-blue-100 dark:bg-blue-900/50 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-800 dark:text-gray-200 font-semibold text-center text-xs">
-                  BANCO DAVIVIENDA
-                </th>
-                <th className="bg-blue-100 dark:bg-blue-900/50 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-800 dark:text-gray-200 font-semibold text-center text-xs">
-                  BANCO DAVIVIENDA
-                </th>
-                <th className="bg-blue-100 dark:bg-blue-900/50 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-800 dark:text-gray-200 font-semibold text-center text-xs">
-                  BANCO DAVIVIENDA
-                </th>
-                <th className="bg-blue-100 dark:bg-blue-900/50 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-800 dark:text-gray-200 font-semibold text-center text-xs">
-                  BANCO REPUBLICA
-                </th>
-                <th className="bg-blue-100 dark:bg-blue-900/50 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-800 dark:text-gray-200 font-semibold text-center text-xs">
-                  BANCO REPUBLICA
-                </th>
-                <th className="bg-blue-100 dark:bg-blue-900/50 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-800 dark:text-gray-200 font-semibold text-center text-xs">
-                  BANCO REPUBLICA
-                </th>
-                <th className="bg-blue-100 dark:bg-blue-900/50 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-800 dark:text-gray-200 font-semibold text-center text-xs">
-                  CITIBANK COMP
-                </th>
-                <th className="bg-blue-100 dark:bg-blue-900/50 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-800 dark:text-gray-200 font-semibold text-center text-xs">
-                  CITIBANK COMP
-                </th>
-                <th className="bg-blue-100 dark:bg-blue-900/50 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-800 dark:text-gray-200 font-semibold text-center text-xs">
-                  CITIBANK COMP
-                </th>
-                <th className="bg-blue-100 dark:bg-blue-900/50 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-800 dark:text-gray-200 font-semibold text-center text-xs">
-                  CITIBANK COMP
-                </th>
-                <th className="bg-blue-100 dark:bg-blue-900/50 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-800 dark:text-gray-200 font-semibold text-center text-xs">
-                  CITIBANK COMP
-                </th>
-                <th className="bg-blue-100 dark:bg-blue-900/50 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-800 dark:text-gray-200 font-semibold text-center text-xs">
-                  CITIBANK COMP
+                <th className="bg-white dark:bg-gray-800 border border-gray-400 dark:border-gray-500 sticky left-0 z-20 min-w-[60px]"></th>
+                <th className="bg-white dark:bg-gray-800 border border-gray-400 dark:border-gray-500 sticky left-[60px] z-20 min-w-[200px]"></th>
+                {/* Bancos reales desde la base de datos - empiezan desde la tercera columna */}
+                {bankAccounts.map((account) => (
+                  <th key={`bank-${account.id}`} className="bg-blue-100 dark:bg-blue-900/50 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-800 dark:text-gray-200 font-semibold text-center text-xs">
+                    {account.banco?.nombre || 'BANCO DESCONOCIDO'}
+                  </th>
+                ))}
+                {/* Columna TOTALES */}
+                <th className="bg-green-100 dark:bg-green-900/50 border-2 border-green-400 dark:border-green-500 px-2 py-1 text-gray-800 dark:text-gray-200 font-semibold text-center text-xs">
+                  TOTALES
                 </th>
               </tr>
 
@@ -198,56 +233,18 @@ const DashboardPagaduria: React.FC = () => {
                 <th className="bg-blue-200 dark:bg-blue-800 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-900 dark:text-white font-bold text-center sticky left-0 z-20 min-w-[60px]">
                   COD
                 </th>
-                <th className="bg-blue-200 dark:bg-blue-800 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-900 dark:text-white font-bold text-center min-w-[200px]">
+                <th className="bg-blue-200 dark:bg-blue-800 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-900 dark:text-white font-bold text-center sticky left-[60px] z-20 min-w-[200px]">
                   CUENTA
                 </th>
-                <th className="bg-gray-100 dark:bg-gray-700 border border-gray-400 dark:border-gray-500 px-1 py-1 text-gray-700 dark:text-gray-300 font-medium text-center text-xs">
-                  000659999420
-                </th>
-                <th className="bg-gray-100 dark:bg-gray-700 border border-gray-400 dark:border-gray-500 px-1 py-1 text-gray-700 dark:text-gray-300 font-medium text-center text-xs">
-                  000659999412
-                </th>
-                <th className="bg-gray-100 dark:bg-gray-700 border border-gray-400 dark:border-gray-500 px-1 py-1 text-gray-700 dark:text-gray-300 font-medium text-center text-xs">
-                  000659999404
-                </th>
-                <th className="bg-gray-100 dark:bg-gray-700 border border-gray-400 dark:border-gray-500 px-1 py-1 text-gray-700 dark:text-gray-300 font-medium text-center text-xs">
-                  4829080007
-                </th>
-                <th className="bg-gray-100 dark:bg-gray-700 border border-gray-400 dark:border-gray-500 px-1 py-1 text-gray-700 dark:text-gray-300 font-medium text-center text-xs">
-                  4829080015
-                </th>
-                <th className="bg-gray-100 dark:bg-gray-700 border border-gray-400 dark:border-gray-500 px-1 py-1 text-gray-700 dark:text-gray-300 font-medium text-center text-xs">
-                  4829080023
-                </th>
-                <th className="bg-gray-100 dark:bg-gray-700 border border-gray-400 dark:border-gray-500 px-1 py-1 text-gray-700 dark:text-gray-300 font-medium text-center text-xs">
-                  4829080031
-                </th>
-                <th className="bg-gray-100 dark:bg-gray-700 border border-gray-400 dark:border-gray-500 px-1 py-1 text-gray-700 dark:text-gray-300 font-medium text-center text-xs">
-                  622996009-7
-                </th>
-                <th className="bg-gray-100 dark:bg-gray-700 border border-gray-400 dark:border-gray-500 px-1 py-1 text-gray-700 dark:text-gray-300 font-medium text-center text-xs">
-                  622996009-4
-                </th>
-                <th className="bg-gray-100 dark:bg-gray-700 border border-gray-400 dark:border-gray-500 px-1 py-1 text-gray-700 dark:text-gray-300 font-medium text-center text-xs">
-                  622996009-6
-                </th>
-                <th className="bg-gray-100 dark:bg-gray-700 border border-gray-400 dark:border-gray-500 px-1 py-1 text-gray-700 dark:text-gray-300 font-medium text-center text-xs">
-                  36209901
-                </th>
-                <th className="bg-gray-100 dark:bg-gray-700 border border-gray-400 dark:border-gray-500 px-1 py-1 text-gray-700 dark:text-gray-300 font-medium text-center text-xs">
-                  36209919
-                </th>
-                <th className="bg-gray-100 dark:bg-gray-700 border border-gray-400 dark:border-gray-500 px-1 py-1 text-gray-700 dark:text-gray-300 font-medium text-center text-xs">
-                  36209927
-                </th>
-                <th className="bg-gray-100 dark:bg-gray-700 border border-gray-400 dark:border-gray-500 px-1 py-1 text-gray-700 dark:text-gray-300 font-medium text-center text-xs">
-                  36209935
-                </th>
-                <th className="bg-gray-100 dark:bg-gray-700 border border-gray-400 dark:border-gray-500 px-1 py-1 text-gray-700 dark:text-gray-300 font-medium text-center text-xs">
-                  36209943
-                </th>
-                <th className="bg-gray-100 dark:bg-gray-700 border border-gray-400 dark:border-gray-500 px-1 py-1 text-gray-700 dark:text-gray-300 font-medium text-center text-xs">
-                  36209950
+                {/* Cuentas bancarias reales desde la base de datos - empiezan desde la tercera columna */}
+                {bankAccounts.map((account) => (
+                  <th key={account.id} className="bg-gray-100 dark:bg-gray-700 border border-gray-400 dark:border-gray-500 px-1 py-1 text-gray-700 dark:text-gray-300 font-medium text-center text-xs">
+                    {account.numero_cuenta}
+                  </th>
+                ))}
+                {/* Columna TOTALES */}
+                <th className="bg-green-50 dark:bg-green-900 border-2 border-green-400 dark:border-green-500 px-1 py-1 text-gray-700 dark:text-gray-300 font-bold text-center text-xs">
+                  TOTALES
                 </th>
               </tr>
 
@@ -256,25 +253,39 @@ const DashboardPagaduria: React.FC = () => {
                 <th className="bg-gray-50 dark:bg-gray-600 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-900 dark:text-white font-bold text-center sticky left-0 z-20">
                   
                 </th>
-                <th className="bg-gray-50 dark:bg-gray-600 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-900 dark:text-white font-bold text-center">
+                <th className="bg-gray-50 dark:bg-gray-600 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-900 dark:text-white font-bold text-center sticky left-[60px] z-20">
                   TRM
                 </th>
-                <th className="bg-gray-50 dark:bg-gray-600 border border-gray-400 dark:border-gray-500 px-1 py-1 text-gray-700 dark:text-gray-300 font-medium text-center text-xs"></th>
-                <th className="bg-gray-50 dark:bg-gray-600 border border-gray-400 dark:border-gray-500 px-1 py-1 text-gray-700 dark:text-gray-300 font-medium text-center text-xs"></th>
-                <th className="bg-gray-50 dark:bg-gray-600 border border-gray-400 dark:border-gray-500 px-1 py-1 text-gray-700 dark:text-gray-300 font-medium text-center text-xs"></th>
-                <th className="bg-gray-50 dark:bg-gray-600 border border-gray-400 dark:border-gray-500 px-1 py-1 text-gray-700 dark:text-gray-300 font-medium text-center text-xs"></th>
-                <th className="bg-gray-50 dark:bg-gray-600 border border-gray-400 dark:border-gray-500 px-1 py-1 text-gray-700 dark:text-gray-300 font-medium text-center text-xs"></th>
-                <th className="bg-gray-50 dark:bg-gray-600 border border-gray-400 dark:border-gray-500 px-1 py-1 text-gray-700 dark:text-gray-300 font-medium text-center text-xs"></th>
-                <th className="bg-gray-50 dark:bg-gray-600 border border-gray-400 dark:border-gray-500 px-1 py-1 text-gray-700 dark:text-gray-300 font-medium text-center text-xs"></th>
-                <th className="bg-gray-50 dark:bg-gray-600 border border-gray-400 dark:border-gray-500 px-1 py-1 text-gray-700 dark:text-gray-300 font-medium text-center text-xs"></th>
-                <th className="bg-gray-50 dark:bg-gray-600 border border-gray-400 dark:border-gray-500 px-1 py-1 text-gray-700 dark:text-gray-300 font-medium text-center text-xs"></th>
-                <th className="bg-gray-50 dark:bg-gray-600 border border-gray-400 dark:border-gray-500 px-1 py-1 text-gray-700 dark:text-gray-300 font-medium text-center text-xs"></th>
-                <th className="bg-gray-50 dark:bg-gray-600 border border-gray-400 dark:border-gray-500 px-1 py-1 text-gray-700 dark:text-gray-300 font-medium text-center text-xs"></th>
-                <th className="bg-gray-50 dark:bg-gray-600 border border-gray-400 dark:border-gray-500 px-1 py-1 text-gray-700 dark:text-gray-300 font-medium text-center text-xs"></th>
-                <th className="bg-gray-50 dark:bg-gray-600 border border-gray-400 dark:border-gray-500 px-1 py-1 text-gray-700 dark:text-gray-300 font-medium text-center text-xs"></th>
-                <th className="bg-gray-50 dark:bg-gray-600 border border-gray-400 dark:border-gray-500 px-1 py-1 text-gray-700 dark:text-gray-300 font-medium text-center text-xs"></th>
-                <th className="bg-gray-50 dark:bg-gray-600 border border-gray-400 dark:border-gray-500 px-1 py-1 text-gray-700 dark:text-gray-300 font-medium text-center text-xs"></th>
-                <th className="bg-gray-50 dark:bg-gray-600 border border-gray-400 dark:border-gray-500 px-1 py-1 text-gray-700 dark:text-gray-300 font-medium text-center text-xs"></th>
+                {/* Celdas TRM para cuentas bancarias reales - empiezan desde la tercera columna */}
+                {bankAccounts.map((account) => (
+                  <th key={`trm-${account.id}`} className="bg-gray-50 dark:bg-gray-600 border border-gray-400 dark:border-gray-500 px-1 py-1 text-gray-700 dark:text-gray-300 font-medium text-center text-xs">
+                    {trmLoading ? (
+                      <span className="text-gray-400">Cargando...</span>
+                    ) : trmError ? (
+                      <span className="text-red-500" title={trmError}>Error</span>
+                    ) : trm ? (
+                      <span className="font-semibold text-blue-600 dark:text-blue-400">
+                        ${parseFloat(trm.valor.toString()).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                    ) : (
+                      <span className="text-gray-400">N/A</span>
+                    )}
+                  </th>
+                ))}
+                {/* Columna TOTALES */}
+                <th className="bg-green-50 dark:bg-green-900 border-2 border-green-400 dark:border-green-500 px-1 py-1 text-gray-700 dark:text-gray-300 font-medium text-center text-xs">
+                  {trmLoading ? (
+                    <span className="text-gray-400">Cargando...</span>
+                  ) : trmError ? (
+                    <span className="text-red-500" title={trmError}>Error</span>
+                  ) : trm ? (
+                    <span className="font-semibold text-blue-600 dark:text-blue-400">
+                      ${parseFloat(trm.valor.toString()).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  ) : (
+                    <span className="text-gray-400">N/A</span>
+                  )}
+                </th>
               </tr>
             </thead>
 
@@ -298,153 +309,105 @@ const DashboardPagaduria: React.FC = () => {
                   </td>
 
                   {/* COLUMNA DE CUENTA/CONCEPTO */}
-                  <td className={`border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-900 dark:text-white font-medium text-center ${getRowColor(concepto.tipo)}`}>
+                  <td className={`border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-900 dark:text-white font-medium text-center sticky left-[60px] z-10 ${getRowColor(concepto.tipo)}`}>
                     <span className="text-xs leading-tight">{concepto.nombre}</span>
                   </td>
 
-                  {/* CELDAS DE DATOS - Todas las compañías */}
-                  {[
-                    'CAPITALIZADORA', 'BOLIVAR', 'COMERCIALES', 'CAPITALIZADORA_AHO', 
-                    'BOLIVAR_AHO', 'BOLIVAR_ARL', 'COMERCIALES_AHO', 
-                    'CAPITALIZADORA_REP', 'BOLIVAR_REP', 'COMERCIALES_REP',
-                    'CAPITALIZADORA_USD', 'CAPITALIZADORA_PESOS', 'BOLIVAR_USD', 
-                    'BOLIVAR_PESOS', 'COMERCIALES_USD', 'COMERCIALES_PESOS'
-                  ].map((companiaNombre, compIdx) => {
-                    // Datos de ejemplo para algunas celdas específicas
-                    let valor = null;
-                    if (concepto.nombre === 'INGRESO' && companiaNombre === 'CAPITALIZADORA') valor = 19500.00;
-                    else if (concepto.nombre === 'INGRESO' && companiaNombre === 'BOLIVAR') valor = 18869144.37;
-                    else if (concepto.nombre === 'INGRESO' && companiaNombre === 'COMERCIALES') valor = 8249535.88;
-                    else if (concepto.nombre === 'CONSUMO NACIONAL' && companiaNombre === 'BOLIVAR') valor = -182539.64;
-                    else if (concepto.nombre === 'CONSUMO NACIONAL' && companiaNombre === 'COMERCIALES') valor = -2385.68;
-                    else if (concepto.nombre === 'RECAUDOS LIBERTADOR' && companiaNombre === 'COMERCIALES') valor = 148715.11;
-                    else if (concepto.nombre === 'EMBARGOS' && companiaNombre === 'BOLIVAR') valor = -51577.82;
-                    else if (concepto.nombre === 'OTROS PAGOS' && companiaNombre === 'CAPITALIZADORA') valor = -189.03;
-                    else if (concepto.nombre === 'OTROS PAGOS' && companiaNombre === 'BOLIVAR') valor = -106690.93;
-                    else if (concepto.nombre === 'OTROS PAGOS' && companiaNombre === 'COMERCIALES') valor = -41626.75;
-                    else if (concepto.nombre === 'VENTAN PROVEEDORES' && companiaNombre === 'CAPITALIZADORA') valor = -1494.26;
-                    else if (concepto.nombre === 'VENTAN PROVEEDORES' && companiaNombre === 'BOLIVAR') valor = -1960138.88;
-                    else if (concepto.nombre === 'VENTAN PROVEEDORES' && companiaNombre === 'COMERCIALES') valor = -5064601.19;
-                    else if (concepto.nombre === 'NOMINA ADMINISTRATIVA' && companiaNombre === 'BOLIVAR') valor = 142.35;
-
-                    return (
-                      <td
-                        key={compIdx}
-                        className="border border-gray-400 dark:border-gray-500 px-2 py-1 text-center text-xs"
-                      >
-                        {valor !== null ? (
-                          <span className={valor < 0 ? 'text-red-700 dark:text-red-400' : 'text-green-700 dark:text-green-400'}>
-                            {valor < 0 ? `(${formatCurrency(Math.abs(valor))})` : formatCurrency(valor)}
-                          </span>
-                        ) : (
-                          <span className="text-gray-400 dark:text-gray-500">—</span>
-                        )}
-                      </td>
-                    );
-                  })}
+                  {/* CELDAS DE DATOS - Solo cuentas bancarias reales desde la tercera columna */}
+                  {/* Columnas de cuentas bancarias reales */}
+                  {bankAccounts.map((account) => (
+                    <td
+                      key={`data-${account.id}`}
+                      className="border border-gray-400 dark:border-gray-500 px-2 py-1 text-center text-xs"
+                    >
+                      <span className="text-gray-400 dark:text-gray-500">—</span>
+                    </td>
+                  ))}
+                  
+                  {/* Columna TOTALES */}
+                  <td className="border-2 border-green-400 dark:border-green-500 px-2 py-1 text-center text-xs bg-green-50 dark:bg-green-900/20">
+                    {(() => {
+                      const total = calculateRowTotal(concepto);
+                      return total !== 0 ? (
+                        <span className={total < 0 ? 'text-red-700 dark:text-red-400' : 'text-green-700 dark:text-green-400'}>
+                          {total < 0 ? `(${formatCurrency(Math.abs(total))})` : formatCurrency(total)}
+                        </span>
+                      ) : (
+                        <span className="text-gray-400 dark:text-gray-500">—</span>
+                      );
+                    })()}
+                  </td>
                 </tr>
               ))}
 
               {/* SEPARADOR */}
               <tr>
-                <td colSpan={18} 
+                <td colSpan={3 + bankAccounts.length} 
                     className="bg-gray-300 dark:bg-gray-600 h-2 border border-gray-400 dark:border-gray-500"></td>
               </tr>
 
               {/* FILA SUBTOTAL MOVIMIENTO BANCARIA */}
               <tr className="bg-green-200 dark:bg-green-800/40 font-bold">
                 <td className="bg-green-200 dark:bg-green-800/40 border border-gray-400 dark:border-gray-500 px-2 py-2 text-center sticky left-0 z-10"></td>
-                <td className="bg-green-200 dark:bg-green-800/40 border border-gray-400 dark:border-gray-500 px-2 py-2 text-gray-900 dark:text-white font-bold text-center">
+                <td className="bg-green-200 dark:bg-green-800/40 border border-gray-400 dark:border-gray-500 px-2 py-2 text-gray-900 dark:text-white font-bold text-center sticky left-[60px] z-10">
                   SUBTOTAL MOVIMIENTO BANCARIA
                 </td>
-                <td className="border border-gray-400 dark:border-gray-500 px-2 py-2 text-center font-bold text-gray-900 dark:text-white">17.816,70</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-2 py-2 text-center font-bold text-gray-900 dark:text-white">16.568.339,46</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-2 py-2 text-center font-bold text-gray-900 dark:text-white">3.287.136,37</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-2 py-2 text-center font-bold text-gray-900 dark:text-white">—</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-2 py-2 text-center font-bold text-gray-900 dark:text-white">—</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-2 py-2 text-center font-bold text-gray-900 dark:text-white">—</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-2 py-2 text-center font-bold text-gray-900 dark:text-white">—</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-2 py-2 text-center font-bold text-gray-900 dark:text-white">—</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-2 py-2 text-center font-bold text-gray-900 dark:text-white">—</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-2 py-2 text-center font-bold text-gray-900 dark:text-white">—</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-2 py-2 text-center font-bold text-gray-900 dark:text-white">—</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-2 py-2 text-center font-bold text-gray-900 dark:text-white">—</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-2 py-2 text-center font-bold text-gray-900 dark:text-white">—</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-2 py-2 text-center font-bold text-gray-900 dark:text-white">—</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-2 py-2 text-center font-bold text-gray-900 dark:text-white">—</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-2 py-2 text-center font-bold text-gray-900 dark:text-white">—</td>
+                {/* Columnas de cuentas bancarias reales */}
+                {bankAccounts.map((account) => (
+                  <td key={`subtotal-${account.id}`} className="border border-gray-400 dark:border-gray-500 px-2 py-2 text-center font-bold text-gray-900 dark:text-white">—</td>
+                ))}
+                {/* Columna TOTALES */}
+                <td className="border-2 border-green-400 dark:border-green-500 px-2 py-2 text-center font-bold text-gray-900 dark:text-white bg-green-100 dark:bg-green-900/30">
+                  <span className="text-green-700 dark:text-green-400">19.873.292,53</span>
+                </td>
               </tr>
 
               {/* FILA SUBTOTAL SALDO INICIAL */}
               <tr className="bg-gray-200 dark:bg-gray-700">
                 <td className="bg-gray-200 dark:bg-gray-700 border border-gray-400 dark:border-gray-500 px-2 py-2 text-center sticky left-0 z-10"></td>
-                <td className="bg-gray-200 dark:bg-gray-700 border border-gray-400 dark:border-gray-500 px-2 py-2 text-gray-900 dark:text-white font-bold text-center">
+                <td className="bg-gray-200 dark:bg-gray-700 border border-gray-400 dark:border-gray-500 px-2 py-2 text-gray-900 dark:text-white font-bold text-center sticky left-[60px] z-10">
                   SUBTOTAL SALDO INICIAL PAGADURIA
                 </td>
-                <td className="border border-gray-400 dark:border-gray-500 px-1 py-2 text-center text-xs text-red-600 dark:text-red-400">#REF!</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-1 py-2 text-center text-xs text-red-600 dark:text-red-400">#REF!</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-1 py-2 text-center text-xs text-red-600 dark:text-red-400">#REF!</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-1 py-2 text-center text-xs text-red-600 dark:text-red-400">#REF!</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-1 py-2 text-center text-xs text-red-600 dark:text-red-400">#REF!</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-1 py-2 text-center text-xs text-red-600 dark:text-red-400">#REF!</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-1 py-2 text-center text-xs text-red-600 dark:text-red-400">#REF!</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-1 py-2 text-center text-xs text-red-600 dark:text-red-400">#REF!</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-1 py-2 text-center text-xs text-red-600 dark:text-red-400">#REF!</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-1 py-2 text-center text-xs text-red-600 dark:text-red-400">#REF!</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-1 py-2 text-center text-xs text-red-600 dark:text-red-400">#REF!</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-1 py-2 text-center text-xs text-red-600 dark:text-red-400">#REF!</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-1 py-2 text-center text-xs text-red-600 dark:text-red-400">#REF!</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-1 py-2 text-center text-xs text-red-600 dark:text-red-400">#REF!</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-1 py-2 text-center text-xs text-red-600 dark:text-red-400">#REF!</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-1 py-2 text-center text-xs text-red-600 dark:text-red-400">#REF!</td>
+                {/* Columnas de cuentas bancarias reales */}
+                {bankAccounts.map((account) => (
+                  <td key={`saldo-inicial-${account.id}`} className="border border-gray-400 dark:border-gray-500 px-1 py-2 text-center text-xs text-red-600 dark:text-red-400">#REF!</td>
+                ))}
+                {/* Columna TOTALES */}
+                <td className="border-2 border-green-400 dark:border-green-500 px-1 py-2 text-center text-xs text-red-600 dark:text-red-400 bg-green-50 dark:bg-green-900/20">
+                  #REF!
+                </td>
               </tr>
 
               {/* FILA MOVIMIENTO TESORERIA */}
               <tr className="bg-blue-200 dark:bg-blue-800/40 font-bold">
                 <td className="bg-blue-200 dark:bg-blue-800/40 border border-gray-400 dark:border-gray-500 px-2 py-2 text-center sticky left-0 z-10"></td>
-                <td className="bg-blue-200 dark:bg-blue-800/40 border border-gray-400 dark:border-gray-500 px-2 py-2 text-gray-900 dark:text-white font-bold text-center">
+                <td className="bg-blue-200 dark:bg-blue-800/40 border border-gray-400 dark:border-gray-500 px-2 py-2 text-gray-900 dark:text-white font-bold text-center sticky left-[60px] z-10">
                   MOVIMIENTO TESORERIA
                 </td>
-                <td className="border border-gray-400 dark:border-gray-500 px-2 py-2 text-center font-bold text-red-700 dark:text-red-400">(7.500,00)</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-2 py-2 text-center font-bold text-red-700 dark:text-red-400">(1.164.430,00)</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-2 py-2 text-center font-bold text-red-700 dark:text-red-400">(1.219.000,00)</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-2 py-2 text-center font-bold text-gray-900 dark:text-white">—</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-2 py-2 text-center font-bold text-gray-900 dark:text-white">—</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-2 py-2 text-center font-bold text-gray-900 dark:text-white">—</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-2 py-2 text-center font-bold text-gray-900 dark:text-white">—</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-2 py-2 text-center font-bold text-gray-900 dark:text-white">—</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-2 py-2 text-center font-bold text-gray-900 dark:text-white">—</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-2 py-2 text-center font-bold text-gray-900 dark:text-white">—</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-2 py-2 text-center font-bold text-gray-900 dark:text-white">—</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-2 py-2 text-center font-bold text-gray-900 dark:text-white">—</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-2 py-2 text-center font-bold text-gray-900 dark:text-white">—</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-2 py-2 text-center font-bold text-gray-900 dark:text-white">—</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-2 py-2 text-center font-bold text-gray-900 dark:text-white">—</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-2 py-2 text-center font-bold text-gray-900 dark:text-white">—</td>
+                {/* Columnas de cuentas bancarias reales */}
+                {bankAccounts.map((account) => (
+                  <td key={`movimiento-tesoreria-${account.id}`} className="border border-gray-400 dark:border-gray-500 px-2 py-2 text-center font-bold text-gray-900 dark:text-white">—</td>
+                ))}
+                {/* Columna TOTALES */}
+                <td className="border-2 border-green-400 dark:border-green-500 px-2 py-2 text-center font-bold text-gray-900 dark:text-white bg-green-100 dark:bg-green-900/30">
+                  <span className="text-red-700 dark:text-red-400">(2.390.930,00)</span>
+                </td>
               </tr>
 
               {/* FILA SALDO TOTAL */}
               <tr className="bg-gray-200 dark:bg-gray-700">
                 <td className="bg-gray-200 dark:bg-gray-700 border border-gray-400 dark:border-gray-500 px-2 py-2 text-center sticky left-0 z-10"></td>
-                <td className="bg-gray-200 dark:bg-gray-700 border border-gray-400 dark:border-gray-500 px-2 py-2 text-gray-900 dark:text-white font-bold text-center">
+                <td className="bg-gray-200 dark:bg-gray-700 border border-gray-400 dark:border-gray-500 px-2 py-2 text-gray-900 dark:text-white font-bold text-center sticky left-[60px] z-10">
                   SALDO TOTAL EN BANCOS
                 </td>
-                <td className="border border-gray-400 dark:border-gray-500 px-1 py-2 text-center text-xs text-red-600 dark:text-red-400">#REF!</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-1 py-2 text-center text-xs text-red-600 dark:text-red-400">#REF!</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-1 py-2 text-center text-xs text-red-600 dark:text-red-400">#REF!</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-1 py-2 text-center text-xs text-red-600 dark:text-red-400">#REF!</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-1 py-2 text-center text-xs text-red-600 dark:text-red-400">#REF!</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-1 py-2 text-center text-xs text-red-600 dark:text-red-400">#REF!</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-1 py-2 text-center text-xs text-red-600 dark:text-red-400">#REF!</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-1 py-2 text-center text-xs text-red-600 dark:text-red-400">#REF!</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-1 py-2 text-center text-xs text-red-600 dark:text-red-400">#REF!</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-1 py-2 text-center text-xs text-red-600 dark:text-red-400">#REF!</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-1 py-2 text-center text-xs text-red-600 dark:text-red-400">#REF!</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-1 py-2 text-center text-xs text-red-600 dark:text-red-400">#REF!</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-1 py-2 text-center text-xs text-red-600 dark:text-red-400">#REF!</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-1 py-2 text-center text-xs text-red-600 dark:text-red-400">#REF!</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-1 py-2 text-center text-xs text-red-600 dark:text-red-400">#REF!</td>
-                <td className="border border-gray-400 dark:border-gray-500 px-1 py-2 text-center text-xs text-red-600 dark:text-red-400">#REF!</td>
+                {/* Columnas de cuentas bancarias reales */}
+                {bankAccounts.map((account) => (
+                  <td key={`saldo-total-${account.id}`} className="border border-gray-400 dark:border-gray-500 px-1 py-2 text-center text-xs text-red-600 dark:text-red-400">#REF!</td>
+                ))}
+                {/* Columna TOTALES */}
+                <td className="border-2 border-green-400 dark:border-green-500 px-1 py-2 text-center text-xs text-red-600 dark:text-red-400 bg-green-50 dark:bg-green-900/20">
+                  #REF!
+                </td>
               </tr>
             </tbody>
           </table>
