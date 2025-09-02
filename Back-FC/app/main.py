@@ -2,12 +2,20 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import uvicorn
+import logging
 
 from .core.config import get_settings
-from .core.database import engine, Base
+from .core.database import engine, Base, SessionLocal
 from .api import api_router
 
 settings = get_settings()
+
+# Configurar logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 # Crear las tablas en la base de datos
 Base.metadata.create_all(bind=engine)

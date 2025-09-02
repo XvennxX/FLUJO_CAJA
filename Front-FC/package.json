@@ -1,13 +1,20 @@
 {
-  "name": "vite-react-typescript-starter",
+  "name": "flujo-caja-frontend",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
+  "description": "Frontend para el sistema de flujo de caja de Bolívar",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:prod": "npm run lint && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "lint:fix": "eslint . --fix",
+    "preview": "vite preview",
+    "check": "node scripts/utils/check-project.js",
+    "analyze": "npm run build && node scripts/utils/analyze-bundle.js",
+    "clean": "rm -rf dist node_modules/.vite",
+    "clean:install": "rm -rf node_modules package-lock.json && npm install"
   },
   "dependencies": {
     "date-fns": "^4.1.0",

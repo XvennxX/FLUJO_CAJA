@@ -1,0 +1,265 @@
+# ========================================
+# ARCHIVOS GLOBALES DEL PROYECTO
+# ========================================
+
+# Archivos del sistema operativo
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# Archivos de IDEs y editores
+.vscode/
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.swp
+*.swo
+*~
+*.sublime-project
+*.sublime-workspace
+
+# Archivos de configuración local
+.env
+.env.local
+.env.*.local
+*.local
+
+# ========================================
+# BACKEND (Python/FastAPI)
+# ========================================
+
+# Entornos virtuales
+.venv/
+venv/
+env/
+ENV/
+
+# Archivos compilados de Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Logs de Python
+*.log
+logs/
+*.out
+
+# Archivos de base de datos locales
+*.sqlite
+*.sqlite3
+*.db
+
+# Archivos de pytest
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+
+# ========================================
+# FRONTEND (Node.js/React)
+# ========================================
+
+# Dependencias
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Build outputs
+dist/
+dist-ssr/
+build/
+.next/
+out/
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Cache directories
+.npm
+.yarn/cache/
+.cache/
+.vite/
+.parcel-cache/
+.eslintcache
+*.tsbuildinfo
+
+# Testing
+coverage/
+.nyc_output
+*.lcov
+
+# ========================================
+# ARCHIVOS DE CONFIGURACIÓN SENSIBLES
+# ========================================
+
+# Archivos de configuración con secretos
+config/secrets.*
+config/production.*
+.env.production
+.env.staging
+
+# Certificados SSL
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+# Archivos de backup
+*.backup
+*.bak
+*.old
+*.orig
+
+# ========================================
+# ARCHIVOS DE DESPLIEGUE
+# ========================================
+
+# Archivos de Docker locales
+docker-compose.override.yml
+.dockerignore
+
+# Archivos de deployment
+deploy.config.json
+*.tar.gz
+*.zip
+releases/
+
+# Scripts de deployment con credenciales
+deploy-*.sh
+deploy-*.bat
+
+# ========================================
+# LOGS Y MONITOREO
+# ========================================
+
+# Logs del sistema
+*.log.*
+access.log
+error.log
+debug.log
+app.log
+
+# Archivos de monitoreo
+monitoring/
+metrics/
+*.pid
+
+# ========================================
+# ARCHIVOS TEMPORALES
+# ========================================
+
+# Archivos temporales del sistema
+tmp/
+temp/
+.tmp/
+.temp/
+
+# Archivos de respaldo automático
+*~
+*.tmp
+*.temp
+*.swp
+*.swo
+
+# ========================================
+# ARCHIVOS DE DATOS
+# ========================================
+
+# Datos de prueba grandes
+data/test/
+fixtures/large/
+samples/
+
+# Exports y reportes
+exports/
+reports/*.xlsx
+reports/*.pdf
+reports/*.csv
+
+# Uploads de usuarios
+uploads/
+media/user_uploads/
+
+# ========================================
+# HERRAMIENTAS DE DESARROLLO
+# ========================================
+
+# Archivos de profiling
+*.prof
+*.profile
+
+# Archivos de debugging
+*.dmp
+core.*
+
+# Archivos de análisis de código
+.scannerwork/
+sonar-project.properties
+
+# ========================================
+# DEPENDENCIAS ESPECÍFICAS
+# ========================================
+
+# MySQL dumps locales
+*.sql.gz
+mysql_dumps/
+
+# Redis dumps
+dump.rdb
+
+# Archivos de migraciones aplicadas (localmente)
+migrations/applied/
+
+# ========================================
+# ARCHIVOS DE CONFIGURACIÓN LOCAL
+# ========================================
+
+# Configuraciones específicas del desarrollador
+.local/
+local_settings.py
+local_config.json
+
+# Scripts personalizados
+scripts/personal/
+scripts/local/
+
+# Notas y documentación personal
+NOTES.md
+TODO.md
+personal/

@@ -1,9 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { Building2, Download, RefreshCw } from 'lucide-react';
-import DatePicker from '../Calendar/DatePicker';
+import { Building2, Download, RefreshCw, AlertCircle } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { formatCurrency } from '../../utils/formatters';
+import { formatDateString } from '../../utils/dateUtils';
 import { useTRM } from '../../hooks/useTRM';
+import { useConceptosFlujoCaja, ConceptoFlujoCaja } from '../../hooks/useConceptosFlujoCaja';
+import { useTransaccionesFlujoCaja } from '../../hooks/useTransaccionesFlujoCaja';
+import { CeldaEditable } from '../UI/CeldaEditable';
+
+interface Concepto {
+  codigo: string;
+  nombre: string;
+  tipo: string;
+  id?: number; // ID del concepto para vincular con transacciones
+}
 
 interface BankAccount {
   id: number;
@@ -22,46 +32,93 @@ interface BankAccount {
 
 const DashboardPagaduria: React.FC = () => {
   const { user } = useAuth();
-  const [selectedMonth, setSelectedMonth] = useState<string>('2025-05');
+  // Obtener la fecha actual en formato YYYY-MM-DD
+  const getCurrentDate = () => {
+    const today = new Date();
+    return today.toISOString().split('T')[0];
+  };
+  
+  const [selectedDate, setSelectedDate] = useState<string>(getCurrentDate());
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [loading, setLoading] = useState(true);
   
   // Hook para obtener TRM
-  const { trm, loading: trmLoading, error: trmError } = useTRM();
+  const { trm, loading: trmLoading, error: trmError, refetch: refetchTRM } = useTRM();
+  
+  // Hook para obtener conceptos desde el backend
+  const { conceptosPagaduria, loading: conceptosLoading, error: conceptosError } = useConceptosFlujoCaja();
+  
+  // Hook para manejar transacciones
+  const { 
+    transacciones, 
+    loading: transaccionesLoading, 
+    error: transaccionesError,
+    guardarTransaccion,
+    obtenerMonto,
+    setError: setTransaccionesError
+  } = useTransaccionesFlujoCaja(selectedDate, 'pagaduria');
 
-  // Conceptos exactos del Excel con los códigos correctos
-  const conceptos = [
-    { codigo: '', nombre: 'DIFERENCIA SALDOS', tipo: 'neutral' },
-    { codigo: '', nombre: 'SALDOS EN BANCOS', tipo: 'neutral' },
-    { codigo: 'I', nombre: 'SALDO DIA ANTERIOR', tipo: 'ingreso' },
-    { codigo: 'I', nombre: 'INGRESO', tipo: 'ingreso' },
-    { codigo: 'E', nombre: 'EGRESO', tipo: 'egreso' },
-    { codigo: 'E', nombre: 'CONSUMO NACIONAL', tipo: 'egreso' },
-    { codigo: 'I', nombre: 'INGRESO CTA PAGADURIA', tipo: 'ingreso' },
-    { codigo: 'I', nombre: 'FINANSEGUROS', tipo: 'ingreso' },
-    { codigo: 'I', nombre: 'RECAUDOS LIBERTADOR', tipo: 'ingreso' },
-    { codigo: 'I', nombre: 'RENDIMIENTOS FINANCIEROS', tipo: 'ingreso' },
-    { codigo: 'I', nombre: 'INGRESOS REASEGUROS', tipo: 'ingreso' },
-    { codigo: 'E', nombre: 'EGR. REASEGUROS', tipo: 'egreso' },
-    { codigo: 'I', nombre: 'ING. COMPRA DE DIVISAS-REASEGUR', tipo: 'ingreso' },
-    { codigo: 'E', nombre: 'EGR. VENTA DIVISAS-REASEGUROS', tipo: 'egreso' },
-    { codigo: 'E', nombre: 'EGRESO - TRASLADOS COMPAÑÍAS', tipo: 'egreso' },
-    { codigo: 'I', nombre: 'INGRESO - TRASLADOS COMPAÑÍAS', tipo: 'ingreso' },
-    { codigo: 'E', nombre: 'EMBARGOS', tipo: 'egreso' },
-    { codigo: 'E', nombre: 'OTROS PAGOS', tipo: 'egreso' },
-    { codigo: 'E', nombre: 'VENTAN PROVEEDORES', tipo: 'egreso' },
-    { codigo: '', nombre: 'INTERCIAS RELAC./INDUS', tipo: 'neutral' },
-    { codigo: 'E', nombre: 'COMISIONES DAVIVIENDA', tipo: 'egreso' },
-    { codigo: 'E', nombre: 'NOMINA CONSEJEROS', tipo: 'egreso' },
-    { codigo: '', nombre: 'NOMINA ADMINISTRATIVA', tipo: 'neutral' },
-    { codigo: '', nombre: 'NOMINA PENSIONES', tipo: 'neutral' },
-    { codigo: 'E', nombre: 'PAGO SOI', tipo: 'egreso' },
-    { codigo: 'E', nombre: 'PAGO IVA', tipo: 'egreso' },
-    { codigo: 'E', nombre: 'OTROS IMPTOS', tipo: 'egreso' },
-    { codigo: 'E', nombre: 'EGRESO DIVIDENDOS', tipo: 'egreso' },
-    { codigo: 'E', nombre: 'CUATRO POR MIL', tipo: 'egreso' },
-    { codigo: '', nombre: 'DIFERENCIA EN CAMBIO CTAS REASEGUROS', tipo: 'neutral' }
-  ];
+  // Función para convertir conceptos del backend al formato del frontend
+  const convertirConceptosParaTabla = (conceptosBackend: ConceptoFlujoCaja[]): Concepto[] => {
+    return conceptosBackend.map(concepto => ({
+      codigo: concepto.tipo_movimiento === 'ingreso' ? 'I' : 
+              concepto.tipo_movimiento === 'egreso' ? 'E' : '',
+      nombre: concepto.nombre,
+      tipo: concepto.tipo_movimiento,
+      id: concepto.id // Incluir ID para vincular con transacciones
+    }));
+  };
+
+  // Función para calcular el total de una fila usando datos reales y fallback
+  const calculateRowTotal = (concepto: Concepto) => {
+    let total = 0;
+    
+    if (concepto.id) {
+      // Sumar todas las transacciones de este concepto
+      const transaccionesConcepto = transacciones.filter(t => t.concepto_id === concepto.id);
+      total = transaccionesConcepto.reduce((sum, t) => sum + t.monto, 0);
+    }
+    
+    return total;
+  };
+
+  // Obtener conceptos: del backend si están disponibles, sino usar los hardcodeados como fallback
+  const conceptos: Concepto[] = conceptosLoading || conceptosError ? 
+    // Fallback a conceptos hardcodeados si hay error o están cargando
+    [
+      { codigo: '', nombre: 'DIFERENCIA SALDOS', tipo: 'neutral' },
+      { codigo: '', nombre: 'SALDOS EN BANCOS', tipo: 'neutral' },
+      { codigo: 'I', nombre: 'SALDO DIA ANTERIOR', tipo: 'ingreso' },
+      { codigo: 'I', nombre: 'INGRESO', tipo: 'ingreso' },
+      { codigo: 'E', nombre: 'EGRESO', tipo: 'egreso' },
+      { codigo: 'E', nombre: 'CONSUMO NACIONAL', tipo: 'egreso' },
+      { codigo: 'I', nombre: 'INGRESO CTA PAGADURIA', tipo: 'ingreso' },
+      { codigo: 'I', nombre: 'FINANSEGUROS', tipo: 'ingreso' },
+      { codigo: 'I', nombre: 'RECAUDOS LIBERTADOR', tipo: 'ingreso' },
+      { codigo: 'I', nombre: 'RENDIMIENTOS FINANCIEROS', tipo: 'ingreso' },
+      { codigo: 'I', nombre: 'INGRESOS REASEGUROS', tipo: 'ingreso' },
+      { codigo: 'E', nombre: 'EGR. REASEGUROS', tipo: 'egreso' },
+      { codigo: 'I', nombre: 'ING. COMPRA DE DIVISAS-REASEGUR', tipo: 'ingreso' },
+      { codigo: 'E', nombre: 'EGR. VENTA DIVISAS-REASEGUROS', tipo: 'egreso' },
+      { codigo: 'E', nombre: 'EGRESO - TRASLADOS COMPAÑÍAS', tipo: 'egreso' },
+      { codigo: 'I', nombre: 'INGRESO - TRASLADOS COMPAÑÍAS', tipo: 'ingreso' },
+      { codigo: 'E', nombre: 'EMBARGOS', tipo: 'egreso' },
+      { codigo: 'E', nombre: 'OTROS PAGOS', tipo: 'egreso' },
+      { codigo: 'E', nombre: 'VENTAN PROVEEDORES', tipo: 'egreso' },
+      { codigo: '', nombre: 'INTERCIAS RELAC./INDUS', tipo: 'neutral' },
+      { codigo: 'E', nombre: 'COMISIONES DAVIVIENDA', tipo: 'egreso' },
+      { codigo: 'E', nombre: 'NOMINA CONSEJEROS', tipo: 'egreso' },
+      { codigo: '', nombre: 'NOMINA ADMINISTRATIVA', tipo: 'neutral' },
+      { codigo: '', nombre: 'NOMINA PENSIONES', tipo: 'neutral' },
+      { codigo: 'E', nombre: 'PAGO SOI', tipo: 'egreso' },
+      { codigo: 'E', nombre: 'PAGO IVA', tipo: 'egreso' },
+      { codigo: 'E', nombre: 'OTROS IMPTOS', tipo: 'egreso' },
+      { codigo: 'E', nombre: 'EGRESO DIVIDENDOS', tipo: 'egreso' },
+      { codigo: 'E', nombre: 'CUATRO POR MIL', tipo: 'egreso' },
+      { codigo: '', nombre: 'DIFERENCIA EN CAMBIO CTAS REASEGUROS', tipo: 'neutral' }
+    ] :
+    // Usar conceptos del backend
+    convertirConceptosParaTabla(conceptosPagaduria);
 
   // Cargar todas las cuentas bancarias al inicializar el componente
   useEffect(() => {
@@ -92,37 +149,6 @@ const DashboardPagaduria: React.FC = () => {
     loadAllBankAccounts();
   }, []);
 
-  // Función para calcular el total de una fila
-  const calculateRowTotal = (concepto: any) => {
-    let total = 0;
-    
-    // Para el Dashboard de Pagaduría, los totales se calculan basándose en 
-    // los valores que normalmente estarían en las cuentas bancarias reales
-    // Por ahora usamos valores de ejemplo, pero esto se debería conectar con datos reales
-    
-    if (concepto.nombre === 'INGRESO') {
-      // Ejemplo: suma de ingresos de todas las cuentas bancarias
-      total += 27138180.25; // Total estimado de ingresos
-    } else if (concepto.nombre === 'CONSUMO NACIONAL') {
-      total += -184925.32; // Total estimado de consumo nacional
-    } else if (concepto.nombre === 'RECAUDOS LIBERTADOR') {
-      total += 148715.11; // Total de recaudos
-    } else if (concepto.nombre === 'EMBARGOS') {
-      total += -51577.82; // Total de embargos
-    } else if (concepto.nombre === 'OTROS PAGOS') {
-      total += -148505.71; // Total de otros pagos
-    } else if (concepto.nombre === 'VENTAN PROVEEDORES') {
-      total += -7026234.33; // Total de pagos a proveedores
-    } else if (concepto.nombre === 'NOMINA ADMINISTRATIVA') {
-      total += 142.35; // Total nómina administrativa
-    }
-    
-    // En una implementación real, esto debería iterar sobre bankAccounts
-    // y sumar los valores reales de cada cuenta para el concepto específico
-    
-    return total;
-  };
-
   const getRowColor = (tipo: string) => {
     switch (tipo) {
       case 'ingreso':
@@ -152,7 +178,23 @@ const DashboardPagaduria: React.FC = () => {
         <div className="flex items-center space-x-3">
           <Building2 className="h-8 w-8 text-bolivar-600" />
           <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Panel de Pagaduría</h1>
+            <div className="flex items-center space-x-3">
+              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Panel de Pagaduría</h1>
+              {/* Indicador de estado de conceptos */}
+              {conceptosLoading ? (
+                <span className="px-2 py-1 text-xs bg-yellow-100 text-yellow-800 rounded-full">
+                  Cargando conceptos...
+                </span>
+              ) : conceptosError ? (
+                <span className="px-2 py-1 text-xs bg-red-100 text-red-800 rounded-full">
+                  Usando fallback
+                </span>
+              ) : (
+                <span className="px-2 py-1 text-xs bg-green-100 text-green-800 rounded-full">
+                  Conectado a BD ({conceptosPagaduria.length})
+                </span>
+              )}
+            </div>
             <p className="text-gray-600 dark:text-gray-400">Flujo de caja por compañías - {user?.name}</p>
             {/* Indicador TRM */}
             <div className="flex items-center space-x-2 mt-1">
@@ -166,7 +208,16 @@ const DashboardPagaduria: React.FC = () => {
                   <span className="text-sm font-semibold text-blue-600 dark:text-blue-400">
                     ${parseFloat(trm.valor.toString()).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
-                  <span className="text-xs text-gray-400">({new Date(trm.fecha).toLocaleDateString('es-CO')})</span>
+                  <span className="text-xs text-gray-400">
+                    ({formatDateString(trm.fecha)})
+                  </span>
+                  <button 
+                    onClick={refetchTRM}
+                    className="ml-1 text-xs text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                    title="Actualizar TRM"
+                  >
+                    🔄
+                  </button>
                 </div>
               ) : (
                 <span className="text-sm text-gray-400">N/A</span>
@@ -176,10 +227,49 @@ const DashboardPagaduria: React.FC = () => {
         </div>
         
         <div className="flex items-center space-x-3">
-          <DatePicker 
-            selectedDate={selectedMonth} 
-            onDateChange={setSelectedMonth}
-          />
+          {/* Selector de fecha específica para transacciones */}
+          <div className="flex flex-col">
+            <label className="text-xs text-gray-600 dark:text-gray-400 mb-1">Fecha específica:</label>
+            <input
+              type="date"
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              className="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-bolivar-500 focus:border-transparent"
+            />
+          </div>
+
+          {/* Indicadores de estado */}
+          <div className="flex flex-col space-y-1">
+            {/* Estado de transacciones */}
+            {transaccionesLoading && (
+              <span className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded-full flex items-center">
+                <RefreshCw className="w-3 h-3 mr-1 animate-spin" />
+                Cargando datos...
+              </span>
+            )}
+            {transaccionesError && (
+              <span className="px-2 py-1 text-xs bg-red-100 text-red-800 rounded-full flex items-center">
+                <AlertCircle className="w-3 h-3 mr-1" />
+                Error: {transaccionesError}
+              </span>
+            )}
+            {!transaccionesLoading && !transaccionesError && (
+              <span className="px-2 py-1 text-xs bg-green-100 text-green-800 rounded-full">
+                {transacciones.length} transacciones
+              </span>
+            )}
+            
+            {/* Botón para limpiar errores */}
+            {transaccionesError && (
+              <button
+                onClick={() => setTransaccionesError(null)}
+                className="px-2 py-1 text-xs bg-gray-100 text-gray-600 rounded hover:bg-gray-200 transition-colors"
+              >
+                Limpiar error
+              </button>
+            )}
+          </div>
+          
           <button className="flex items-center space-x-2 px-3 py-2 bg-bolivar-600 text-white rounded-lg hover:bg-bolivar-700 transition-colors text-sm">
             <RefreshCw className="h-4 w-4" />
             <span>Actualizar</span>
@@ -318,9 +408,16 @@ const DashboardPagaduria: React.FC = () => {
                   {bankAccounts.map((account) => (
                     <td
                       key={`data-${account.id}`}
-                      className="border border-gray-400 dark:border-gray-500 px-2 py-1 text-center text-xs"
+                      className="border border-gray-400 dark:border-gray-500 px-1 py-1 text-center text-xs h-8 min-h-[32px]"
                     >
-                      <span className="text-gray-400 dark:text-gray-500">—</span>
+                      <CeldaEditable
+                        conceptoId={concepto.id || 0}
+                        cuentaId={account.id}
+                        valor={obtenerMonto(concepto.id || 0, account.id)}
+                        onGuardar={guardarTransaccion}
+                        companiaId={account.compania?.id}
+                        disabled={!concepto.id} // Deshabilitar si no hay ID del concepto
+                      />
                     </td>
                   ))}
                   

@@ -16,7 +16,9 @@ export const useTRM = () => {
       setLoading(true);
       setError(null);
       
-      const response = await fetch('http://localhost:8000/api/v1/trm/current');
+      // Agregar timestamp para evitar cache
+      const timestamp = new Date().getTime();
+      const response = await fetch(`http://localhost:8000/api/v1/trm/current?_t=${timestamp}`);
       
       if (!response.ok) {
         throw new Error('Error al obtener TRM');
@@ -37,7 +39,9 @@ export const useTRM = () => {
       setLoading(true);
       setError(null);
       
-      const response = await fetch(`http://localhost:8000/api/v1/trm/by-date/${fecha}`);
+      // Agregar timestamp para evitar cache
+      const timestamp = new Date().getTime();
+      const response = await fetch(`http://localhost:8000/api/v1/trm/by-date/${fecha}?_t=${timestamp}`);
       
       if (!response.ok) {
         if (response.status === 404) {
@@ -58,7 +62,9 @@ export const useTRM = () => {
 
   const getTRMRange = async (fechaInicio?: string, fechaFin?: string, limit = 30): Promise<TRM[]> => {
     try {
-      let url = `http://localhost:8000/api/v1/trm/range?limit=${limit}`;
+      // Agregar timestamp para evitar cache
+      const timestamp = new Date().getTime();
+      let url = `http://localhost:8000/api/v1/trm/range?limit=${limit}&_t=${timestamp}`;
       
       if (fechaInicio) {
         url += `&fecha_inicio=${fechaInicio}`;
