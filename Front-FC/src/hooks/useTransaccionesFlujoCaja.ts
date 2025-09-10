@@ -59,8 +59,11 @@ export const useTransaccionesFlujoCaja = (fecha: string, area: 'tesoreria' | 'pa
         const data = await response.json();
         setTransacciones(data);
       } else {
-        const errorData = await response.json();
-        setError(errorData.detail || 'Error al cargar transacciones');
+        const errorData = await response.json().catch(() => ({}));
+        const errorMessage = typeof errorData === 'string' 
+          ? errorData 
+          : errorData.detail || errorData.message || 'Error al cargar transacciones';
+        setError(errorMessage);
       }
     } catch (err) {
       setError('Error de conexión al cargar transacciones');
@@ -78,6 +81,20 @@ export const useTransaccionesFlujoCaja = (fecha: string, area: 'tesoreria' | 'pa
     companiaId?: number
   ): Promise<boolean> => {
     try {
+      // Validar parámetros de entrada
+      if (!conceptoId || (!cuentaId && cuentaId !== null)) {
+        console.error('Parámetros inválidos en guardarTransaccion:', { conceptoId, cuentaId });
+        setError('Parámetros inválidos para guardar transacción');
+        return false;
+      }
+
+      // Validar que el monto sea un número válido
+      if (!isFinite(monto) || isNaN(monto)) {
+        console.error('Monto inválido en guardarTransaccion:', monto);
+        setError('El monto debe ser un número válido');
+        return false;
+      }
+
       // Buscar si ya existe una transacción para este concepto y cuenta
       const transaccionExistente = transacciones.find(
         t => t.concepto_id === conceptoId && t.cuenta_id === cuentaId
@@ -99,12 +116,29 @@ export const useTransaccionesFlujoCaja = (fecha: string, area: 'tesoreria' | 'pa
           }
         );
 
+        console.log('🔄 Respuesta PUT del backend:', {
+          status: response.status,
+          statusText: response.statusText,
+          ok: response.ok,
+          url: response.url
+        });
+
         if (response.ok) {
+          const responseData = await response.json().catch(() => null);
+          console.log('✅ Datos de respuesta PUT:', responseData);
           await cargarTransacciones(); // Recargar datos
           return true;
         } else {
-          const errorData = await response.json();
-          setError(errorData.detail || 'Error al actualizar transacción');
+          const errorData = await response.json().catch(() => ({}));
+          console.error('❌ Error en PUT:', {
+            status: response.status,
+            statusText: response.statusText,
+            errorData
+          });
+          const errorMessage = typeof errorData === 'string' 
+            ? errorData 
+            : errorData.detail || errorData.message || 'Error al actualizar transacción';
+          setError(errorMessage);
           return false;
         }
       } else {
@@ -128,12 +162,29 @@ export const useTransaccionesFlujoCaja = (fecha: string, area: 'tesoreria' | 'pa
           }
         );
 
+        console.log('🆕 Respuesta POST del backend:', {
+          status: response.status,
+          statusText: response.statusText,
+          ok: response.ok,
+          url: response.url
+        });
+
         if (response.ok) {
+          const responseData = await response.json().catch(() => null);
+          console.log('✅ Datos de respuesta POST:', responseData);
           await cargarTransacciones(); // Recargar datos
           return true;
         } else {
-          const errorData = await response.json();
-          setError(errorData.detail || 'Error al crear transacción');
+          const errorData = await response.json().catch(() => ({}));
+          console.error('❌ Error en POST:', {
+            status: response.status,
+            statusText: response.statusText,
+            errorData
+          });
+          const errorMessage = typeof errorData === 'string' 
+            ? errorData 
+            : errorData.detail || errorData.message || 'Error al crear transacción';
+          setError(errorMessage);
           return false;
         }
       }
@@ -146,10 +197,34 @@ export const useTransaccionesFlujoCaja = (fecha: string, area: 'tesoreria' | 'pa
 
   // Obtener el monto de una transacción específica
   const obtenerMonto = useCallback((conceptoId: number, cuentaId: number | null): number => {
-    const transaccion = transacciones.find(
-      t => t.concepto_id === conceptoId && t.cuenta_id === cuentaId
-    );
-    return transaccion ? transaccion.monto : 0;
+    try {
+      // Validar parámetros de entrada
+      if (!conceptoId || (!cuentaId && cuentaId !== null)) {
+        console.warn('Parámetros inválidos en obtenerMonto:', { conceptoId, cuentaId });
+        return 0;
+      }
+
+      const transaccion = transacciones.find(
+        t => t.concepto_id === conceptoId && t.cuenta_id === cuentaId
+      );
+      
+      if (!transaccion) {
+        return 0;
+      }
+
+      const monto = Number(transaccion.monto) || 0;
+      
+      // Validar que el monto sea un número válido
+      if (!isFinite(monto) || isNaN(monto)) {
+        console.warn('Monto inválido encontrado en transacción:', transaccion);
+        return 0;
+      }
+
+      return monto;
+    } catch (error) {
+      console.error('Error en obtenerMonto:', error);
+      return 0;
+    }
   }, [transacciones]);
 
   // Eliminar transacción

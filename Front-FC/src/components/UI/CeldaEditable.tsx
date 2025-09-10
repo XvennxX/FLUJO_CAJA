@@ -27,6 +27,13 @@ export const CeldaEditable: React.FC<CeldaEditableProps> = ({
   // Formatear el valor para mostrar
   const formatearValor = (val: number): string => {
     if (val === 0) return '';
+    
+    // Verificar que el valor sea un número válido
+    if (!isFinite(val) || isNaN(val)) {
+      console.warn('Valor no válido en formatearValor:', val);
+      return '';
+    }
+    
     return val.toString();
   };
 
@@ -34,14 +41,58 @@ export const CeldaEditable: React.FC<CeldaEditableProps> = ({
   const parsearValor = (val: string): number => {
     if (!val || val.trim() === '') return 0;
     
-    // Remover caracteres no numéricos excepto punto, coma y signo negativo
-    const cleanValue = val.replace(/[^\d.,-]/g, '');
-    
-    // Reemplazar coma por punto para el decimal
-    const normalizedValue = cleanValue.replace(',', '.');
-    
-    const parsed = parseFloat(normalizedValue);
-    return isNaN(parsed) ? 0 : parsed;
+    try {
+      // Limpiar el valor de entrada
+      let cleanValue = val.trim();
+      
+      // Manejar el signo negativo
+      const isNegative = cleanValue.startsWith('-');
+      if (isNegative) {
+        cleanValue = cleanValue.substring(1);
+      }
+      
+      // Remover caracteres no numéricos excepto punto y coma para decimales
+      cleanValue = cleanValue.replace(/[^\d.,]/g, '');
+      
+      // Si después de limpiar no queda nada, retornar 0
+      if (!cleanValue) {
+        return 0;
+      }
+      
+      // Reemplazar coma por punto para el decimal
+      cleanValue = cleanValue.replace(',', '.');
+      
+      // Validar que solo haya un punto decimal
+      const dotCount = (cleanValue.match(/\./g) || []).length;
+      if (dotCount > 1) {
+        console.warn('Formato decimal inválido:', val);
+        return 0;
+      }
+      
+      const parsed = parseFloat(cleanValue);
+      
+      // Verificar que el resultado sea un número válido
+      if (isNaN(parsed) || !isFinite(parsed)) {
+        console.warn('Valor parseado no válido:', parsed, 'de:', val);
+        return 0;
+      }
+      
+      // Aplicar el signo negativo si es necesario
+      const result = isNegative ? -Math.abs(parsed) : parsed;
+      
+      console.log('💱 Parseando valor:', {
+        original: val,
+        cleaned: cleanValue,
+        isNegative,
+        parsed,
+        result
+      });
+      
+      return result;
+    } catch (error) {
+      console.error('Error parsing value:', error, 'valor:', val);
+      return 0;
+    }
   };
 
   // Inicializar el valor del input cuando se abre la edición
@@ -74,28 +125,52 @@ export const CeldaEditable: React.FC<CeldaEditableProps> = ({
   const handleSave = async () => {
     if (isSaving) return;
 
-    const nuevoValor = parsearValor(inputValue);
-    
-    // Si el valor no cambió, cancelar edición
-    if (nuevoValor === valor) {
-      setIsEditing(false);
-      return;
-    }
-
     try {
+      const nuevoValor = parsearValor(inputValue);
+      
+      console.log('💾 Intentando guardar:', {
+        inputValue: inputValue,
+        nuevoValor: nuevoValor,
+        valorAnterior: valor,
+        conceptoId: conceptoId,
+        cuentaId: cuentaId,
+        companiaId: companiaId
+      });
+      
+      // Validar que el valor sea un número válido
+      if (!isFinite(nuevoValor)) {
+        console.error('❌ Valor no válido para guardar:', nuevoValor);
+        setHasError(true);
+        return;
+      }
+      
+      // Si el valor no cambió, cancelar edición
+      if (nuevoValor === valor) {
+        console.log('✅ Valor sin cambios, cancelando edición');
+        setIsEditing(false);
+        return;
+      }
+
       setIsSaving(true);
+      console.log('🚀 Llamando onGuardar con valor:', nuevoValor);
+      
       const success = await onGuardar(conceptoId, cuentaId, nuevoValor, companiaId);
+      
+      console.log('📝 Resultado de onGuardar:', success);
       
       if (success) {
         setIsEditing(false);
         setHasError(false);
+        console.log('✅ Guardado exitoso');
       } else {
         setHasError(true);
+        console.error('❌ onGuardar retornó false');
         // Mantener el modo de edición para permitir correcciones
       }
     } catch (error) {
-      console.error('Error saving cell:', error);
+      console.error('❌ Error en handleSave:', error);
       setHasError(true);
+      // Mantener el modo de edición para permitir correcciones
     } finally {
       setIsSaving(false);
     }
@@ -131,10 +206,20 @@ export const CeldaEditable: React.FC<CeldaEditableProps> = ({
 
   // Determinar el estilo del valor
   const getValueStyle = (val: number) => {
-    if (val === 0) return 'text-gray-400 dark:text-gray-500';
-    return val < 0 
-      ? 'text-red-700 dark:text-red-400' 
-      : 'text-green-700 dark:text-green-400';
+    try {
+      // Validar que el valor sea un número válido
+      if (!isFinite(val) || isNaN(val)) {
+        return 'text-red-500';
+      }
+      
+      if (val === 0) return 'text-gray-400 dark:text-gray-500';
+      return val < 0 
+        ? 'text-red-700 dark:text-red-400' 
+        : 'text-green-700 dark:text-green-400';
+    } catch (error) {
+      console.error('Error en getValueStyle:', error);
+      return 'text-red-500';
+    }
   };
 
   if (isEditing) {
@@ -162,7 +247,7 @@ export const CeldaEditable: React.FC<CeldaEditableProps> = ({
         )}
         {hasError && (
           <div className="absolute z-10 top-full left-0 mt-1 px-2 py-1 bg-red-500 text-white text-xs rounded shadow-lg whitespace-nowrap">
-            Error al guardar
+            Error al guardar. Verifique el valor e intente nuevamente.
           </div>
         )}
       </div>
@@ -175,13 +260,27 @@ export const CeldaEditable: React.FC<CeldaEditableProps> = ({
       onClick={handleClick}
       title={disabled ? 'Campo no editable' : 'Click para editar'}
     >
-      {valor === 0 ? (
-        <span className="text-gray-400 dark:text-gray-500">—</span>
-      ) : (
-        <span className={getValueStyle(valor)}>
-          {valor < 0 ? `(${formatCurrency(Math.abs(valor))})` : formatCurrency(valor)}
-        </span>
-      )}
+      {(() => {
+        try {
+          // Validar que el valor sea un número válido
+          if (!isFinite(valor) || isNaN(valor)) {
+            return <span className="text-red-500 text-xs">Invalid</span>;
+          }
+          
+          if (valor === 0) {
+            return <span className="text-gray-400 dark:text-gray-500">—</span>;
+          }
+          
+          return (
+            <span className={getValueStyle(valor)}>
+              {valor < 0 ? `(${formatCurrency(Math.abs(valor))})` : formatCurrency(valor)}
+            </span>
+          );
+        } catch (error) {
+          console.error('Error renderizando valor en CeldaEditable:', error);
+          return <span className="text-red-500 text-xs">Error</span>;
+        }
+      })()}
     </div>
   );
 };

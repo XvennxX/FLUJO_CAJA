@@ -5,9 +5,12 @@ from ..core.database import Base
 import enum
 
 class TipoMovimiento(enum.Enum):
-    ingreso = "ingreso"
-    egreso = "egreso"
-    neutral = "neutral"
+    pagaduria = "pagaduria"
+    renta_fija = "renta fija" 
+    renta_variable = "renta variable"
+    derivados = "derivados"
+    divisas = "divisas"
+    otros = "otros"
 
 class AreaConcepto(enum.Enum):
     tesoreria = "tesoreria"
@@ -26,7 +29,7 @@ class ConceptoFlujoCaja(Base):
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     nombre = Column(String(100), nullable=False)
     codigo = Column(String(10), nullable=True)  # I, E, vacio
-    tipo = Column(Enum(TipoMovimiento), nullable=False)
+    tipo = Column(String(50), nullable=True)  # Cambiado a String para aceptar cualquier valor
     
     # Configuración de área y visualización
     area = Column(Enum(AreaConcepto), nullable=False, default=AreaConcepto.ambas)
@@ -36,6 +39,7 @@ class ConceptoFlujoCaja(Base):
     # Sistema de dependencias automáticas
     depende_de_concepto_id = Column(Integer, ForeignKey("conceptos_flujo_caja.id", ondelete="SET NULL"), nullable=True)
     tipo_dependencia = Column(Enum(TipoDependencia), nullable=True)
+    formula_dependencia = Column(String(255), nullable=True)  # Para fórmulas complejas como "SUMA(1,2,3)"
     
     # Auditoría
     created_at = Column(DateTime(timezone=True), server_default=func.now())

@@ -6,6 +6,7 @@ import { formatDateString } from '../../utils/dateUtils';
 import { useTRM } from '../../hooks/useTRM';
 import { useConceptosFlujoCaja, ConceptoFlujoCaja } from '../../hooks/useConceptosFlujoCaja';
 import { useTransaccionesFlujoCaja } from '../../hooks/useTransaccionesFlujoCaja';
+import { useDiferenciaSaldos } from '../../hooks/useDiferenciaSaldos';
 import { CeldaEditable } from '../UI/CeldaEditable';
 
 interface Concepto {
@@ -58,13 +59,19 @@ const DashboardPagaduria: React.FC = () => {
     setError: setTransaccionesError
   } = useTransaccionesFlujoCaja(selectedDate, 'pagaduria');
 
+  // Hook para manejar diferencias saldos automáticas
+  const { 
+    calcularDiferenciaSaldos, 
+    verificarNecesidadCalculo,
+    loading: diferenciaSaldosLoading 
+  } = useDiferenciaSaldos();
+
   // Función para convertir conceptos del backend al formato del frontend
   const convertirConceptosParaTabla = (conceptosBackend: ConceptoFlujoCaja[]): Concepto[] => {
     return conceptosBackend.map(concepto => ({
-      codigo: concepto.tipo_movimiento === 'ingreso' ? 'I' : 
-              concepto.tipo_movimiento === 'egreso' ? 'E' : '',
+      codigo: concepto.codigo || '', // Usar el campo 'codigo' de la BD para la columna "OP"
       nombre: concepto.nombre,
-      tipo: concepto.tipo_movimiento,
+      tipo: concepto.tipo, // Usar el campo 'tipo' de la BD para la columna "TIPO OP"
       id: concepto.id // Incluir ID para vincular con transacciones
     }));
   };
@@ -81,6 +88,27 @@ const DashboardPagaduria: React.FC = () => {
     
     return total;
   };
+
+  // Función para procesamiento automático de diferencias saldos
+  const procesarDiferenciaSaldosAutomatica = async () => {
+    try {
+      console.log('🔍 Verificando necesidad de cálculo de diferencias saldos...');
+      const necesitaCalculo = await verificarNecesidadCalculo(selectedDate);
+      
+      if (necesitaCalculo) {
+        console.log('⚡ Calculando diferencias saldos automáticamente...');
+        await calcularDiferenciaSaldos(selectedDate);
+        console.log('✅ Diferencias saldos procesadas');
+        // Recargar transacciones para mostrar los nuevos valores
+        window.location.reload(); // Temporal - en producción usar mejor refetch
+      } else {
+        console.log('✅ Diferencias saldos ya están actualizadas');
+      }
+    } catch (error) {
+      console.error('❌ Error procesando diferencias saldos:', error);
+    }
+  };
+
 
   // Obtener conceptos: del backend si están disponibles, sino usar los hardcodeados como fallback
   const conceptos: Concepto[] = conceptosLoading || conceptosError ? 
@@ -149,6 +177,13 @@ const DashboardPagaduria: React.FC = () => {
     loadAllBankAccounts();
   }, []);
 
+  // Ejecutar procesamiento automático de diferencias saldos cuando cambien las transacciones
+  useEffect(() => {
+    if (!transaccionesLoading && transacciones.length > 0) {
+      procesarDiferenciaSaldosAutomatica();
+    }
+  }, [selectedDate, transacciones.length]); // Solo cuando cambie la fecha o el número de transacciones
+
   const getRowColor = (tipo: string) => {
     switch (tipo) {
       case 'ingreso':
@@ -158,6 +193,50 @@ const DashboardPagaduria: React.FC = () => {
       default:
         return 'bg-white dark:bg-gray-800';
     }
+  };
+
+  // Función para identificar conceptos especiales y asignar colores especiales
+  const getSpecialRowColor = (concepto: Concepto) => {
+    const nombreUpper = concepto.nombre.toUpperCase();
+    
+    // DIFERENCIA SALDOS - Color especial para mostrar que es calculado automáticamente
+    if (nombreUpper.includes('DIFERENCIA SALDOS')) {
+      return 'bg-yellow-100 dark:bg-yellow-900/30 font-medium border-l-4 border-yellow-400';
+    }
+    
+    // SUBTOTAL MOVIMIENTO - Verde
+    if (nombreUpper.includes('SUBTOTAL MOVIMIENTO') || nombreUpper.includes('SUBTOTAL MOVIMIENTO BANCARIA')) {
+      return 'bg-green-200 dark:bg-green-800/40 font-bold';
+    }
+    
+    // SUBTOTAL SALDO INICIAL - Gris/Morado
+    if (nombreUpper.includes('SUBTOTAL SALDO INICIAL')) {
+      return 'bg-gray-200 dark:bg-gray-700 font-bold';
+    }
+    
+    // MOVIMIENTO TESORERÍA - Azul
+    if (nombreUpper.includes('MOVIMIENTO TESORERIA') || nombreUpper.includes('MOVIMIENTO TESORERÍA')) {
+      return 'bg-blue-200 dark:bg-blue-800/40 font-bold';
+    }
+    
+    // SALDO TOTAL - Gris/Morado
+    if (nombreUpper.includes('SALDO TOTAL EN BANCOS') || nombreUpper.includes('SALDO TOTAL')) {
+      return 'bg-gray-200 dark:bg-gray-700 font-bold';
+    }
+    
+    // Si no es especial, usar el color normal
+    return getRowColor(concepto.tipo);
+  };
+
+  // Función para verificar si es un concepto especial
+  const isSpecialConcept = (concepto: Concepto): boolean => {
+    const nombreUpper = concepto.nombre.toUpperCase();
+    return nombreUpper.includes('DIFERENCIA SALDOS') ||
+           nombreUpper.includes('SUBTOTAL MOVIMIENTO') ||
+           nombreUpper.includes('SUBTOTAL SALDO INICIAL') ||
+           nombreUpper.includes('MOVIMIENTO TESORERIA') ||
+           nombreUpper.includes('MOVIMIENTO TESORERÍA') ||
+           nombreUpper.includes('SALDO TOTAL');
   };
 
   if (loading) {
@@ -382,10 +461,15 @@ const DashboardPagaduria: React.FC = () => {
             {/* BODY - CONCEPTOS Y DATOS */}
             <tbody>
               {conceptos.map((concepto, conceptoIdx) => (
-                <tr key={conceptoIdx} className={getRowColor(concepto.tipo)}>
+                <tr key={conceptoIdx} className={getSpecialRowColor(concepto)}>
                   {/* COLUMNA DE CÓDIGO */}
-                  <td className={`border border-gray-400 dark:border-gray-500 px-2 py-1 text-center sticky left-0 z-10 ${getRowColor(concepto.tipo)}`}>
-                    {concepto.codigo && (
+                  <td className={`border border-gray-400 dark:border-gray-500 px-2 py-1 text-center sticky left-0 z-10 ${getSpecialRowColor(concepto)}`}>
+                    {/* Mostrar siempre un icono N para conceptos especiales, o el código real para conceptos normales */}
+                    {isSpecialConcept(concepto) ? (
+                      <span className="w-5 h-5 rounded text-xs flex items-center justify-center font-bold mx-auto bg-gray-500 text-white">
+                        N
+                      </span>
+                    ) : concepto.codigo ? (
                       <span className={`w-5 h-5 rounded text-xs flex items-center justify-center font-bold mx-auto ${
                         concepto.codigo === 'E' 
                           ? 'bg-red-500 text-white' 
@@ -395,11 +479,11 @@ const DashboardPagaduria: React.FC = () => {
                       }`}>
                         {concepto.codigo}
                       </span>
-                    )}
+                    ) : null}
                   </td>
 
                   {/* COLUMNA DE CUENTA/CONCEPTO */}
-                  <td className={`border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-900 dark:text-white font-medium text-center sticky left-[60px] z-10 ${getRowColor(concepto.tipo)}`}>
+                  <td className={`border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-900 dark:text-white font-medium text-center sticky left-[60px] z-10 ${getSpecialRowColor(concepto)}`}>
                     <span className="text-xs leading-tight">{concepto.nombre}</span>
                   </td>
 
@@ -410,28 +494,67 @@ const DashboardPagaduria: React.FC = () => {
                       key={`data-${account.id}`}
                       className="border border-gray-400 dark:border-gray-500 px-1 py-1 text-center text-xs h-8 min-h-[32px]"
                     >
-                      <CeldaEditable
-                        conceptoId={concepto.id || 0}
-                        cuentaId={account.id}
-                        valor={obtenerMonto(concepto.id || 0, account.id)}
-                        onGuardar={guardarTransaccion}
-                        companiaId={account.compania?.id}
-                        disabled={!concepto.id} // Deshabilitar si no hay ID del concepto
-                      />
+                      {/* Si es DIFERENCIA SALDOS, mostrar valor desde base de datos */}
+                      {concepto.nombre === 'DIFERENCIA SALDOS' ? (
+                        <div className="h-full flex items-center justify-center">
+                          {(() => {
+                            console.log(`🔍 Mostrando DIFERENCIA SALDOS para cuenta ${account.id} (${account.numero_cuenta})`);
+                            const transaccion = transacciones.find(t => 
+                              t.cuenta_id === account.id && 
+                              t.concepto_id === 52
+                            );
+                            const diferencia = transaccion ? parseFloat(String(transaccion.monto)) || 0 : 0;
+                            console.log(`✅ Valor DIFERENCIA SALDOS cuenta ${account.id}: ${diferencia}`);
+                            
+                            return diferencia !== 0 ? (
+                              <span className={`font-medium ${diferencia < 0 ? 'text-red-700 dark:text-red-400' : 'text-green-700 dark:text-green-400'}`}>
+                                {diferencia < 0 ? `(${formatCurrency(Math.abs(diferencia))})` : formatCurrency(diferencia)}
+                              </span>
+                            ) : (
+                              <span className="text-gray-400 dark:text-gray-500">—</span>
+                            );
+                          })()}
+                        </div>
+                      ) : (
+                        <CeldaEditable
+                          conceptoId={concepto.id || 0}
+                          cuentaId={account.id}
+                          valor={obtenerMonto(concepto.id || 0, account.id)}
+                          onGuardar={guardarTransaccion}
+                          companiaId={account.compania?.id}
+                          disabled={!concepto.id} // Deshabilitar si no hay ID del concepto
+                        />
+                      )}
                     </td>
                   ))}
                   
                   {/* Columna TOTALES */}
                   <td className="border-2 border-green-400 dark:border-green-500 px-2 py-1 text-center text-xs bg-green-50 dark:bg-green-900/20">
                     {(() => {
-                      const total = calculateRowTotal(concepto);
-                      return total !== 0 ? (
-                        <span className={total < 0 ? 'text-red-700 dark:text-red-400' : 'text-green-700 dark:text-green-400'}>
-                          {total < 0 ? `(${formatCurrency(Math.abs(total))})` : formatCurrency(total)}
-                        </span>
-                      ) : (
-                        <span className="text-gray-400 dark:text-gray-500">—</span>
-                      );
+                      // Si es DIFERENCIA SALDOS, sumar totales desde base de datos
+                      if (concepto.nombre === 'DIFERENCIA SALDOS') {
+                        console.log(`🔍 Calculando DIFERENCIA SALDOS TOTAL`);
+                        const total = transacciones
+                          .filter(t => t.concepto_id === 52)
+                          .reduce((sum, t) => sum + (parseFloat(String(t.monto)) || 0), 0);
+                        console.log(`✅ Resultado DIFERENCIA SALDOS TOTAL: ${total}`);
+                        return total !== 0 ? (
+                          <span className={total < 0 ? 'text-red-700 dark:text-red-400' : 'text-green-700 dark:text-green-400'}>
+                            {total < 0 ? `(${formatCurrency(Math.abs(total))})` : formatCurrency(total)}
+                          </span>
+                        ) : (
+                          <span className="text-gray-400 dark:text-gray-500">—</span>
+                        );
+                      } else {
+                        const total = calculateRowTotal(concepto);
+                        return total !== 0 ? (
+                          <span className={total < 0 ? 'text-red-700 dark:text-red-400' : 'text-green-700 dark:text-green-400'}>
+                            {total < 0 ? `(${formatCurrency(Math.abs(total))})` : formatCurrency(total)}
+                          </span>
+                        ) : (
+                          <span className="text-gray-400 dark:text-gray-500">—</span>
+                        );
+                      }
                     })()}
                   </td>
                 </tr>
@@ -441,70 +564,6 @@ const DashboardPagaduria: React.FC = () => {
               <tr>
                 <td colSpan={3 + bankAccounts.length} 
                     className="bg-gray-300 dark:bg-gray-600 h-2 border border-gray-400 dark:border-gray-500"></td>
-              </tr>
-
-              {/* FILA SUBTOTAL MOVIMIENTO BANCARIA */}
-              <tr className="bg-green-200 dark:bg-green-800/40 font-bold">
-                <td className="bg-green-200 dark:bg-green-800/40 border border-gray-400 dark:border-gray-500 px-2 py-2 text-center sticky left-0 z-10"></td>
-                <td className="bg-green-200 dark:bg-green-800/40 border border-gray-400 dark:border-gray-500 px-2 py-2 text-gray-900 dark:text-white font-bold text-center sticky left-[60px] z-10">
-                  SUBTOTAL MOVIMIENTO BANCARIA
-                </td>
-                {/* Columnas de cuentas bancarias reales */}
-                {bankAccounts.map((account) => (
-                  <td key={`subtotal-${account.id}`} className="border border-gray-400 dark:border-gray-500 px-2 py-2 text-center font-bold text-gray-900 dark:text-white">—</td>
-                ))}
-                {/* Columna TOTALES */}
-                <td className="border-2 border-green-400 dark:border-green-500 px-2 py-2 text-center font-bold text-gray-900 dark:text-white bg-green-100 dark:bg-green-900/30">
-                  <span className="text-green-700 dark:text-green-400">19.873.292,53</span>
-                </td>
-              </tr>
-
-              {/* FILA SUBTOTAL SALDO INICIAL */}
-              <tr className="bg-gray-200 dark:bg-gray-700">
-                <td className="bg-gray-200 dark:bg-gray-700 border border-gray-400 dark:border-gray-500 px-2 py-2 text-center sticky left-0 z-10"></td>
-                <td className="bg-gray-200 dark:bg-gray-700 border border-gray-400 dark:border-gray-500 px-2 py-2 text-gray-900 dark:text-white font-bold text-center sticky left-[60px] z-10">
-                  SUBTOTAL SALDO INICIAL PAGADURIA
-                </td>
-                {/* Columnas de cuentas bancarias reales */}
-                {bankAccounts.map((account) => (
-                  <td key={`saldo-inicial-${account.id}`} className="border border-gray-400 dark:border-gray-500 px-1 py-2 text-center text-xs text-red-600 dark:text-red-400">#REF!</td>
-                ))}
-                {/* Columna TOTALES */}
-                <td className="border-2 border-green-400 dark:border-green-500 px-1 py-2 text-center text-xs text-red-600 dark:text-red-400 bg-green-50 dark:bg-green-900/20">
-                  #REF!
-                </td>
-              </tr>
-
-              {/* FILA MOVIMIENTO TESORERIA */}
-              <tr className="bg-blue-200 dark:bg-blue-800/40 font-bold">
-                <td className="bg-blue-200 dark:bg-blue-800/40 border border-gray-400 dark:border-gray-500 px-2 py-2 text-center sticky left-0 z-10"></td>
-                <td className="bg-blue-200 dark:bg-blue-800/40 border border-gray-400 dark:border-gray-500 px-2 py-2 text-gray-900 dark:text-white font-bold text-center sticky left-[60px] z-10">
-                  MOVIMIENTO TESORERIA
-                </td>
-                {/* Columnas de cuentas bancarias reales */}
-                {bankAccounts.map((account) => (
-                  <td key={`movimiento-tesoreria-${account.id}`} className="border border-gray-400 dark:border-gray-500 px-2 py-2 text-center font-bold text-gray-900 dark:text-white">—</td>
-                ))}
-                {/* Columna TOTALES */}
-                <td className="border-2 border-green-400 dark:border-green-500 px-2 py-2 text-center font-bold text-gray-900 dark:text-white bg-green-100 dark:bg-green-900/30">
-                  <span className="text-red-700 dark:text-red-400">(2.390.930,00)</span>
-                </td>
-              </tr>
-
-              {/* FILA SALDO TOTAL */}
-              <tr className="bg-gray-200 dark:bg-gray-700">
-                <td className="bg-gray-200 dark:bg-gray-700 border border-gray-400 dark:border-gray-500 px-2 py-2 text-center sticky left-0 z-10"></td>
-                <td className="bg-gray-200 dark:bg-gray-700 border border-gray-400 dark:border-gray-500 px-2 py-2 text-gray-900 dark:text-white font-bold text-center sticky left-[60px] z-10">
-                  SALDO TOTAL EN BANCOS
-                </td>
-                {/* Columnas de cuentas bancarias reales */}
-                {bankAccounts.map((account) => (
-                  <td key={`saldo-total-${account.id}`} className="border border-gray-400 dark:border-gray-500 px-1 py-2 text-center text-xs text-red-600 dark:text-red-400">#REF!</td>
-                ))}
-                {/* Columna TOTALES */}
-                <td className="border-2 border-green-400 dark:border-green-500 px-1 py-2 text-center text-xs text-red-600 dark:text-red-400 bg-green-50 dark:bg-green-900/20">
-                  #REF!
-                </td>
               </tr>
             </tbody>
           </table>

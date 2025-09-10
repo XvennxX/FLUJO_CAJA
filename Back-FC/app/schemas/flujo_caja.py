@@ -9,9 +9,12 @@ from enum import Enum
 
 # Enums
 class TipoMovimientoSchema(str, Enum):
-    ingreso = "ingreso"
-    egreso = "egreso"
-    neutral = "neutral"
+    pagaduria = "pagaduria"
+    renta_fija = "renta fija"
+    renta_variable = "renta variable"
+    derivados = "derivados"
+    divisas = "divisas"
+    otros = "otros"
 
 class AreaConceptoSchema(str, Enum):
     tesoreria = "tesoreria"
@@ -34,7 +37,7 @@ class AreaTransaccionSchema(str, Enum):
 class ConceptoFlujoCajaBase(BaseModel):
     nombre: str = Field(..., max_length=100, description="Nombre del concepto")
     codigo: Optional[str] = Field(None, max_length=10, description="Código del dashboard (I, E, vacío)")
-    tipo: TipoMovimientoSchema = Field(..., description="Tipo de movimiento")
+    tipo: Optional[str] = Field(None, description="Tipo de movimiento")
     area: AreaConceptoSchema = Field(AreaConceptoSchema.ambas, description="Área donde aparece")
     orden_display: int = Field(0, description="Orden en el dashboard")
     activo: bool = Field(True, description="Si está activo para usar")
@@ -61,7 +64,7 @@ class ConceptoFlujoCajaUpdate(BaseModel):
     """Schema para actualizar conceptos"""
     nombre: Optional[str] = Field(None, max_length=100)
     codigo: Optional[str] = Field(None, max_length=10)
-    tipo: Optional[TipoMovimientoSchema] = None
+    tipo: Optional[str] = None
     area: Optional[AreaConceptoSchema] = None
     orden_display: Optional[int] = None
     activo: Optional[bool] = None
@@ -93,7 +96,7 @@ class TransaccionFlujoCajaBase(BaseModel):
     fecha: date = Field(..., description="Fecha de la transacción")
     concepto_id: int = Field(..., description="ID del concepto")
     cuenta_id: Optional[int] = Field(None, description="ID de la cuenta bancaria")
-    monto: Decimal = Field(..., ge=0, description="Monto de la transacción")
+    monto: Decimal = Field(..., description="Monto de la transacción (puede ser negativo)")
     descripcion: Optional[str] = Field(None, description="Descripción adicional")
     area: AreaTransaccionSchema = Field(AreaTransaccionSchema.tesoreria, description="Área de la transacción")
     compania_id: Optional[int] = Field(None, description="ID de la compañía")
@@ -110,7 +113,7 @@ class TransaccionFlujoCajaUpdate(BaseModel):
     fecha: Optional[date] = None
     concepto_id: Optional[int] = None
     cuenta_id: Optional[int] = None
-    monto: Optional[Decimal] = Field(None, ge=0)
+    monto: Optional[Decimal] = Field(None, description="Monto de la transacción (puede ser negativo)")
     descripcion: Optional[str] = None
     area: Optional[AreaTransaccionSchema] = None
     compania_id: Optional[int] = None

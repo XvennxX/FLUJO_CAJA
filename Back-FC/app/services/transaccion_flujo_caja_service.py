@@ -22,12 +22,14 @@ from ..schemas.flujo_caja import (
     AreaTransaccionSchema,
     TipoMovimientoSchema
 )
+from .dependencias_flujo_caja_service import DependenciasFlujoCajaService
 
 class TransaccionFlujoCajaService:
     """Servicio para gestión de transacciones de flujo de caja"""
     
     def __init__(self, db: Session):
         self.db = db
+        self.dependencias_service = DependenciasFlujoCajaService(db)
     
     def crear_transaccion(self, transaccion_data: TransaccionFlujoCajaCreate, usuario_id: int) -> TransaccionFlujoCaja:
         """Crear una nueva transacción de flujo de caja"""
@@ -73,8 +75,15 @@ class TransaccionFlujoCajaService:
         self.db.commit()
         self.db.refresh(db_transaccion)
         
-        # Procesar dependencias automáticas
-        self._procesar_dependencias_automaticas(transaccion_data.fecha, transaccion_data.area, usuario_id)
+        # Procesar dependencias automáticas avanzadas
+        self.dependencias_service.procesar_dependencias_avanzadas(
+            fecha=transaccion_data.fecha, 
+            area=transaccion_data.area,
+            concepto_modificado_id=transaccion_data.concepto_id,
+            cuenta_id=transaccion_data.cuenta_id,
+            compania_id=transaccion_data.compania_id,
+            usuario_id=usuario_id  # ← Pasar el usuario real
+        )
         
         return db_transaccion
     
@@ -130,11 +139,16 @@ class TransaccionFlujoCajaService:
         self.db.commit()
         self.db.refresh(db_transaccion)
         
-        # Procesar dependencias automáticas si cambió la fecha o área
-        if 'fecha' in update_data or 'area' in update_data:
+        # Procesar dependencias automáticas avanzadas si cambió la fecha, área o monto
+        if 'fecha' in update_data or 'area' in update_data or 'monto' in update_data:
             fecha_procesar = update_data.get('fecha', db_transaccion.fecha)
             area_procesar = update_data.get('area', db_transaccion.area)
-            self._procesar_dependencias_automaticas(fecha_procesar, area_procesar, usuario_id)
+            self.dependencias_service.procesar_dependencias_avanzadas(
+                fecha=fecha_procesar, 
+                area=area_procesar,
+                concepto_modificado_id=db_transaccion.concepto_id,
+                usuario_id=usuario_id  # ← Pasar el usuario real
+            )
         
         return db_transaccion
     
@@ -146,12 +160,17 @@ class TransaccionFlujoCajaService:
         
         fecha = db_transaccion.fecha
         area = db_transaccion.area
+        concepto_id = db_transaccion.concepto_id
         
         self.db.delete(db_transaccion)
         self.db.commit()
         
-        # Procesar dependencias automáticas después de eliminar
-        self._procesar_dependencias_automaticas(fecha, area, usuario_id)
+        # Procesar dependencias automáticas avanzadas después de eliminar
+        self.dependencias_service.procesar_dependencias_avanzadas(
+            fecha=fecha, 
+            area=area,
+            concepto_modificado_id=concepto_id
+        )
         
         return True
     

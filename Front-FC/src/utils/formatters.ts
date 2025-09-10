@@ -1,10 +1,21 @@
 export const formatCurrency = (amount: number): string => {
-  return new Intl.NumberFormat('es-CO', {
-    style: 'currency',
-    currency: 'COP',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(amount);
+  // Validar que el amount sea un número válido
+  if (!isFinite(amount) || isNaN(amount)) {
+    console.warn('Valor inválido pasado a formatCurrency:', amount);
+    return '$0';
+  }
+  
+  try {
+    return new Intl.NumberFormat('es-CO', {
+      style: 'currency',
+      currency: 'COP',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(amount);
+  } catch (error) {
+    console.error('Error formateando moneda:', error, 'valor:', amount);
+    return '$0';
+  }
 };
 
 export const formatDate = (date: string): string => {

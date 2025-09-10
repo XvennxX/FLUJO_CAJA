@@ -5,6 +5,8 @@ import { formatCurrency } from '../../utils/formatters';
 import { useConceptosFlujoCaja, ConceptoFlujoCaja } from '../../hooks/useConceptosFlujoCaja';
 import { useTransaccionesFlujoCaja, TransaccionFlujoCaja } from '../../hooks/useTransaccionesFlujoCaja';
 import { CeldaEditable } from '../UI/CeldaEditable';
+import { ErrorBoundary } from '../UI/ErrorBoundary';
+import { SaldoInicialService } from '../../services/saldoInicialService';
 
 interface Concepto {
   categoria: string;
@@ -53,6 +55,9 @@ const DashboardTesoreria: React.FC = () => {
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [loading, setLoading] = useState(true);
   
+  // Estado para forzar re-render cuando cambien las transacciones
+  const [forceUpdate, setForceUpdate] = useState(0);
+  
   // Hook para obtener conceptos desde el backend
   const { conceptosTesoreria, loading: conceptosLoading, error: conceptosError } = useConceptosFlujoCaja();
   
@@ -95,11 +100,53 @@ const DashboardTesoreria: React.FC = () => {
     loadAllBankAccounts();
   }, []);
 
+  // Función helper para validar y limpiar valores numéricos
+  const safeNumericValue = (value: any): number => {
+    if (typeof value === 'number' && isFinite(value) && !isNaN(value)) {
+      return value;
+    }
+    console.warn('Valor no válido detectado:', value, 'tipo:', typeof value);
+    return 0;
+  };
+
+  // Función para aplicar signo correcto basado en el código del concepto
+  const aplicarSignoSegunCodigo = (valor: number, codigo: string): number => {
+    try {
+      // Validar que el valor sea un número válido
+      if (!isFinite(valor) || isNaN(valor)) {
+        console.warn('Valor no válido en aplicarSignoSegunCodigo:', valor);
+        return 0;
+      }
+      
+      // Convertir a número absoluto primero para evitar doble negativos
+      const valorAbsoluto = Math.abs(valor);
+      
+      switch (codigo?.toUpperCase()) {
+        case 'E': // Egresos - siempre negativos
+          return -valorAbsoluto;
+        case 'I': // Ingresos - siempre positivos
+          return valorAbsoluto;
+        case 'N': // Neutro - siempre positivos
+          return valorAbsoluto;
+        default: // Sin código o cualquier otro - siempre positivos
+          return valorAbsoluto;
+      }
+    } catch (error) {
+      console.error('Error en aplicarSignoSegunCodigo:', error);
+      return 0;
+    }
+  };
+
   // Función para cargar transacciones del día anterior
   const cargarTransaccionesDiaAnterior = async (fecha: string) => {
     try {
       setLoadingDiaAnterior(true);
       const fechaAnterior = getPreviousDate(fecha);
+      
+      console.log('📅 Cargando transacciones del día anterior:', {
+        fechaActual: fecha,
+        fechaAnterior: fechaAnterior
+      });
       
       const token = localStorage.getItem('access_token');
       const headers = {
@@ -107,19 +154,36 @@ const DashboardTesoreria: React.FC = () => {
         ...(token && { Authorization: `Bearer ${token}` })
       };
 
-      const response = await fetch(
-        `http://localhost:8000/api/v1/api/transacciones-flujo-caja/fecha/${fechaAnterior}?area=tesoreria`,
-        { headers }
-      );
+      const url = `http://localhost:8000/api/v1/api/transacciones-flujo-caja/fecha/${fechaAnterior}?area=tesoreria`;
+      console.log('🌐 URL de consulta:', url);
+
+      const response = await fetch(url, { headers });
+
+      console.log('📡 Respuesta del servidor:', {
+        status: response.status,
+        statusText: response.statusText,
+        ok: response.ok
+      });
 
       if (response.ok) {
         const data = await response.json();
+        console.log('📊 Transacciones del día anterior cargadas:', {
+          cantidad: data.length,
+          transacciones: data.map((t: any) => ({
+            id: t.id,
+            concepto_id: t.concepto_id,
+            cuenta_id: t.cuenta_id,
+            monto: t.monto,
+            fecha: t.fecha
+          }))
+        });
         setTransaccionesDiaAnterior(data);
       } else {
+        console.warn('❌ No se pudieron cargar transacciones del día anterior');
         setTransaccionesDiaAnterior([]);
       }
     } catch (error) {
-      console.error('Error cargando transacciones del día anterior:', error);
+      console.error('💥 Error cargando transacciones del día anterior:', error);
       setTransaccionesDiaAnterior([]);
     } finally {
       setLoadingDiaAnterior(false);
@@ -131,14 +195,19 @@ const DashboardTesoreria: React.FC = () => {
     cargarTransaccionesDiaAnterior(selectedDate);
   }, [selectedDate]);
 
+  // Forzar actualización cuando cambien las transacciones
+  useEffect(() => {
+    setForceUpdate(prev => prev + 1);
+    console.log('🔄 Transacciones actualizadas, forzando re-render');
+  }, [transacciones]);
+
   // Función para convertir conceptos del backend al formato del frontend
   const convertirConceptosParaTabla = (conceptosBackend: ConceptoFlujoCaja[]): Concepto[] => {
     return conceptosBackend.map(concepto => ({
-      categoria: concepto.categoria || determinarCategoria(concepto.nombre),
-      codigo: concepto.tipo_movimiento === 'ingreso' ? 'I' : 
-              concepto.tipo_movimiento === 'egreso' ? 'E' : '',
+      categoria: concepto.tipo, // Usar el campo 'tipo' de la BD para la columna "TIPO OP"
+      codigo: concepto.codigo || '', // Usar el campo 'codigo' de la BD para la columna "OP"
       nombre: concepto.nombre,
-      tipo: concepto.tipo_movimiento,
+      tipo: concepto.tipo,
       id: concepto.id // Incluir ID para vincular con transacciones
     }));
   };
@@ -257,118 +326,159 @@ const DashboardTesoreria: React.FC = () => {
 
   // Función para calcular el total de una fila usando datos reales y fallback
   const calculateRowTotal = (concepto: Concepto) => {
-    let total = 0;
-    
-    // Manejar casos especiales de conceptos calculados
-    if (concepto.nombre === 'SALDO INICIAL') {
-      // Para SALDO INICIAL, usar la suma del SALDO FINAL CUENTAS del día anterior para todas las cuentas
-      total = calculateSaldoInicialDesdeDiaAnterior();
-      return total;
-    } else if (concepto.nombre === 'SALDO NETO INICIAL PAGADURÍA') {
-      // Para SALDO NETO INICIAL PAGADURÍA, usar el cálculo automático
-      total = calculateSaldoNetoPagaduria();
-      return total;
+    try {
+      let total = 0;
+      
+      // Manejar casos especiales de conceptos calculados
+      if (concepto.nombre === 'SALDO INICIAL') {
+        // Para SALDO INICIAL, usar la suma del SALDO FINAL CUENTAS del día anterior para todas las cuentas
+        total = calculateSaldoInicialDesdeDiaAnterior();
+        return isFinite(total) ? total : 0;
+      } else if (concepto.nombre === 'SALDO NETO INICIAL PAGADURÍA') {
+        // Para SALDO NETO INICIAL PAGADURÍA, calcular sumando todas las cuentas
+        
+        if (bankAccounts.length > 0) {
+          total = bankAccounts.reduce((sum, account) => {
+            const saldoNetoCuenta = calculateSaldoNetoPagaduria(account.id);
+            return sum + (isFinite(saldoNetoCuenta) ? saldoNetoCuenta : 0);
+          }, 0);
+        } else {
+          // Fallback: si no hay cuentas, usar cálculo general
+          total = calculateSaldoNetoPagaduria();
+        }
+        
+        return isFinite(total) ? total : 0;
+      }
+      
+      // Para conceptos normales, sumar el valor de todas las cuentas bancarias
+      if (concepto.id && bankAccounts.length > 0) {
+        total = bankAccounts.reduce((sum, account) => {
+          const valorCuenta = obtenerMontoConSignos(concepto.id!, account.id);
+          const valorValido = isFinite(valorCuenta) ? valorCuenta : 0;
+          return sum + valorValido;
+        }, 0);
+      } else if (concepto.id) {
+        // Fallback: si no hay cuentas cargadas, usar transacciones directamente
+        const transaccionesConcepto = transacciones.filter(t => t.concepto_id === concepto.id);
+        total = transaccionesConcepto.reduce((sum, t) => {
+          const monto = Number(t.monto) || 0;
+          return sum + (isFinite(monto) ? monto : 0);
+        }, 0);
+      }
+      
+      return isFinite(total) ? total : 0;
+    } catch (error) {
+      console.error('Error en calculateRowTotal:', error);
+      return 0;
     }
-    
-    // Para conceptos normales, sumar el valor de todas las cuentas bancarias
-    if (concepto.id && bankAccounts.length > 0) {
-      total = bankAccounts.reduce((sum, account) => {
-        const valorCuenta = obtenerMonto(concepto.id!, account.id);
-        return sum + (Number(valorCuenta) || 0);
-      }, 0);
-    } else if (concepto.id) {
-      // Fallback: si no hay cuentas cargadas, usar transacciones directamente
-      const transaccionesConcepto = transacciones.filter(t => t.concepto_id === concepto.id);
-      total = transaccionesConcepto.reduce((sum, t) => sum + (Number(t.monto) || 0), 0);
-    }
-    
-    return isNaN(total) ? 0 : total;
   };
 
   // Función para calcular el SALDO NETO INICIAL PAGADURÍA (suma de SALDO INICIAL + CONSUMO + VENTANILLA)
   const calculateSaldoNetoPagaduria = (cuentaId?: number) => {
     try {
-      // Encontrar los conceptos específicos de pagaduría
-      const saldoInicial = conceptos.find(c => c.nombre === 'SALDO INICIAL' && c.categoria === 'PAGADURIA');
-      const consumo = conceptos.find(c => c.nombre === 'CONSUMO' && c.categoria === 'PAGADURIA');
-      const ventanilla = conceptos.find(c => c.nombre === 'VENTANILLA' && c.categoria === 'PAGADURIA');
+      // Encontrar los conceptos específicos de pagaduría por nombre exacto
+      const consumo = conceptos.find(c => c.nombre === 'CONSUMO');
+      const ventanilla = conceptos.find(c => c.nombre === 'VENTANILLA');
 
       let total = 0;
 
-      // Sumar SALDO INICIAL
-      if (saldoInicial?.id) {
-        const transaccionesSaldo = transacciones.filter(t => 
-          t && t.concepto_id === saldoInicial.id && (cuentaId ? t.cuenta_id === cuentaId : true)
-        );
-        const montoSaldo = transaccionesSaldo.reduce((sum, t) => sum + (Number(t.monto) || 0), 0);
-        total += montoSaldo;
+      // ✅ SALDO INICIAL: Usar el valor calculado desde el día anterior
+      const montoSaldoInicial = calculateSaldoInicialDesdeDiaAnterior(cuentaId);
+      
+      // Validar el monto del saldo inicial
+      if (isFinite(montoSaldoInicial)) {
+        total += montoSaldoInicial;
       }
 
-      // Sumar CONSUMO
+      // Sumar CONSUMO desde transacciones con signos aplicados
       if (consumo?.id) {
-        const transaccionesConsumo = transacciones.filter(t => 
-          t && t.concepto_id === consumo.id && (cuentaId ? t.cuenta_id === cuentaId : true)
-        );
-        const montoConsumo = transaccionesConsumo.reduce((sum, t) => sum + (Number(t.monto) || 0), 0);
-        total += montoConsumo;
+        if (cuentaId) {
+          // Para cuenta específica, usar la función con signos
+          const montoConsumo = obtenerMontoConSignos(consumo.id, cuentaId);
+          if (isFinite(montoConsumo)) {
+            total += montoConsumo;
+          }
+        } else {
+          // Para todas las cuentas
+          const transaccionesConsumo = transacciones.filter(t => 
+            t && t.concepto_id === consumo.id
+          );
+          const montoConsumo = transaccionesConsumo.reduce((sum, t) => {
+            const monto = Number(t.monto) || 0;
+            const montoConSigno = aplicarSignoSegunCodigo(monto, consumo.codigo || '');
+            return sum + (isFinite(montoConSigno) ? montoConSigno : 0);
+          }, 0);
+          total += montoConsumo;
+        }
       }
 
-      // Sumar VENTANILLA
+      // Sumar VENTANILLA desde transacciones con signos aplicados
       if (ventanilla?.id) {
-        const transaccionesVentanilla = transacciones.filter(t => 
-          t && t.concepto_id === ventanilla.id && (cuentaId ? t.cuenta_id === cuentaId : true)
-        );
-        const montoVentanilla = transaccionesVentanilla.reduce((sum, t) => sum + (Number(t.monto) || 0), 0);
-        total += montoVentanilla;
+        if (cuentaId) {
+          // Para cuenta específica, usar la función con signos
+          const montoVentanilla = obtenerMontoConSignos(ventanilla.id, cuentaId);
+          if (isFinite(montoVentanilla)) {
+            total += montoVentanilla;
+          }
+        } else {
+          // Para todas las cuentas
+          const transaccionesVentanilla = transacciones.filter(t => 
+            t && t.concepto_id === ventanilla.id
+          );
+          const montoVentanilla = transaccionesVentanilla.reduce((sum, t) => {
+            const monto = Number(t.monto) || 0;
+            const montoConSigno = aplicarSignoSegunCodigo(monto, ventanilla.codigo || '');
+            return sum + (isFinite(montoConSigno) ? montoConSigno : 0);
+          }, 0);
+          total += montoVentanilla;
+        }
       }
 
-      return isNaN(total) ? 0 : total;
+      const resultado = isFinite(total) ? total : 0;
+      return resultado;
     } catch (error) {
       console.error('Error calculando saldo neto pagaduría:', error);
       return 0;
     }
   };
 
-  // Función para calcular el subtotal de tesorería (excluyendo los primeros 4 conceptos de PAGADURIA)
+  // Función para obtener el SUB-TOTAL TESORERÍA desde la base de datos (ID 50)
   const calculateSubtotalTesoreria = (cuentaId?: number) => {
     try {
-      // Filtrar conceptos que NO sean los primeros 4 de PAGADURIA
-      const conceptosTesoreria = conceptos.filter(concepto => {
-        const categoria = concepto.categoria?.toUpperCase() || '';
-        // Excluir los conceptos de PAGADURIA (los primeros 4)
-        return categoria !== 'PAGADURIA';
-      });
+      // Buscar el concepto SUB-TOTAL TESORERÍA (ID 50)
+      const subtotalConcepto = conceptos.find(c => c.nombre === 'SUB-TOTAL TESORERÍA');
+      
+      if (!subtotalConcepto?.id) {
+        console.log('❌ No se encontró el concepto SUB-TOTAL TESORERÍA');
+        return 0;
+      }
 
-      let subtotal = 0;
-      conceptosTesoreria.forEach(concepto => {
-        if (concepto.id && transacciones && Array.isArray(transacciones)) {
-          if (cuentaId) {
-            // Calcular para una cuenta específica
-            const transaccionesCuenta = transacciones.filter(t => 
-              t && t.concepto_id === concepto.id && t.cuenta_id === cuentaId
-            );
-            const montoCuenta = transaccionesCuenta.reduce((sum, t) => {
-              const monto = Number(t.monto) || 0;
-              return sum + monto;
-            }, 0);
-            subtotal += montoCuenta;
-          } else {
-            // Calcular total general (todas las cuentas)
-            const transaccionesConcepto = transacciones.filter(t => 
-              t && t.concepto_id === concepto.id
-            );
-            const montoTotal = transaccionesConcepto.reduce((sum, t) => {
-              const monto = Number(t.monto) || 0;
-              return sum + monto;
-            }, 0);
-            subtotal += montoTotal;
-          }
+      if (cuentaId) {
+        // Para una cuenta específica, obtener el valor desde la BD
+        const valorCuenta = obtenerMontoConSignos(subtotalConcepto.id, cuentaId);
+        return isFinite(valorCuenta) ? valorCuenta : 0;
+      } else {
+        // Para todas las cuentas, sumar los valores de cada cuenta
+        if (bankAccounts.length > 0) {
+          const total = bankAccounts.reduce((sum, account) => {
+            const valorCuenta = obtenerMontoConSignos(subtotalConcepto.id!, account.id);
+            return sum + (isFinite(valorCuenta) ? valorCuenta : 0);
+          }, 0);
+          return total;
+        } else {
+          // Fallback: usar transacciones directamente
+          const transaccionesSubtotal = transacciones.filter(t => 
+            t && t.concepto_id === subtotalConcepto.id
+          );
+          const total = transaccionesSubtotal.reduce((sum, t) => {
+            const monto = Number(t.monto) || 0;
+            return sum + (isFinite(monto) ? monto : 0);
+          }, 0);
+          return total;
         }
-      });
-
-      return isNaN(subtotal) ? 0 : subtotal;
+      }
     } catch (error) {
-      console.error('Error calculando subtotal tesorería:', error);
+      console.error('Error obteniendo SUB-TOTAL TESORERÍA desde BD:', error);
       return 0;
     }
   };
@@ -395,54 +505,281 @@ const DashboardTesoreria: React.FC = () => {
   // Función para calcular el SALDO FINAL CUENTAS del día anterior (para usar como SALDO INICIAL del día actual)
   const calculateSaldoInicialDesdeDiaAnterior = (cuentaId?: number) => {
     try {
+      console.log('🔍 Calculando saldo inicial desde día anterior...', {
+        fechaSeleccionada: selectedDate,
+        cuentaId: cuentaId || 'todas',
+        tieneTransaccionesDiaAnterior: !!transaccionesDiaAnterior,
+        cantidadTransacciones: transaccionesDiaAnterior?.length || 0
+      });
+
+      // Si no hay transacciones del día anterior, el saldo inicial es 0
       if (!transaccionesDiaAnterior || transaccionesDiaAnterior.length === 0) {
+        console.log('❌ No hay transacciones del día anterior, saldo inicial = 0');
         return 0;
       }
 
-      // Calcular SALDO NETO INICIAL PAGADURÍA del día anterior
-      const saldoInicial = conceptos.find(c => c.nombre === 'SALDO INICIAL' && c.categoria === 'PAGADURIA');
-      const consumo = conceptos.find(c => c.nombre === 'CONSUMO' && c.categoria === 'PAGADURIA');
-      const ventanilla = conceptos.find(c => c.nombre === 'VENTANILLA' && c.categoria === 'PAGADURIA');
+      // Buscar el concepto "SALDO FINAL CUENTAS" 
+      const saldoFinalCuentasConcepto = conceptos.find(c => c.nombre === 'SALDO FINAL CUENTAS');
+      
+      console.log('🎯 Buscando concepto SALDO FINAL CUENTAS:', {
+        conceptoEncontrado: !!saldoFinalCuentasConcepto,
+        conceptoId: saldoFinalCuentasConcepto?.id,
+        todosLosConceptos: conceptos.map(c => ({ id: c.id, nombre: c.nombre }))
+      });
+      
+      if (!saldoFinalCuentasConcepto) {
+        console.warn('❌ No se encontró el concepto SALDO FINAL CUENTAS');
+        return 0;
+      }
 
-      let saldoNetoPagaduria = 0;
+      // Buscar las transacciones del día anterior para este concepto específico
+      const transaccionesSaldoFinal = transaccionesDiaAnterior.filter(t => 
+        t && 
+        t.concepto_id === saldoFinalCuentasConcepto.id && 
+        (cuentaId ? t.cuenta_id === cuentaId : true)
+      );
 
-      // Sumar conceptos de pagaduría del día anterior
-      [saldoInicial, consumo, ventanilla].forEach(concepto => {
-        if (concepto?.id) {
-          const transaccionesConcepto = transaccionesDiaAnterior.filter(t => 
-            t && t.concepto_id === concepto.id && (cuentaId ? t.cuenta_id === cuentaId : true)
-          );
-          const monto = transaccionesConcepto.reduce((sum, t) => sum + (Number(t.monto) || 0), 0);
-          saldoNetoPagaduria += monto;
-        }
+      console.log('📊 Transacciones SALDO FINAL CUENTAS del día anterior:', {
+        conceptoId: saldoFinalCuentasConcepto.id,
+        transaccionesEncontradas: transaccionesSaldoFinal.length,
+        transacciones: transaccionesSaldoFinal.map(t => ({
+          id: t.id,
+          monto: t.monto,
+          cuenta_id: t.cuenta_id,
+          fecha: t.fecha
+        }))
       });
 
-      // Calcular SUB-TOTAL TESORERÍA del día anterior
-      const conceptosTesoreria = conceptos.filter(concepto => {
-        const categoria = concepto.categoria?.toUpperCase() || '';
-        return categoria !== 'PAGADURIA';
+      // Sumar los montos de SALDO FINAL CUENTAS del día anterior
+      const saldoFinalDiaAnterior = transaccionesSaldoFinal.reduce((sum, t) => {
+        const monto = Number(t.monto) || 0;
+        console.log(`  💰 Sumando transacción ID ${t.id}: ${monto}`);
+        return sum + monto;
+      }, 0);
+
+      console.log('✅ Saldo inicial calculado desde SALDO FINAL CUENTAS del día anterior:', {
+        conceptoId: saldoFinalCuentasConcepto.id,
+        cuentaId: cuentaId || 'todas',
+        transaccionesEncontradas: transaccionesSaldoFinal.length,
+        saldoFinalDiaAnterior
       });
 
-      let subtotalTesoreria = 0;
-      conceptosTesoreria.forEach(concepto => {
-        if (concepto.id) {
-          const transaccionesConcepto = transaccionesDiaAnterior.filter(t => 
-            t && t.concepto_id === concepto.id && (cuentaId ? t.cuenta_id === cuentaId : true)
-          );
-          const monto = transaccionesConcepto.reduce((sum, t) => sum + (Number(t.monto) || 0), 0);
-          subtotalTesoreria += monto;
-        }
-      });
+      // Si el resultado es NaN, undefined, null o no es un número válido, devolver 0
+      if (isNaN(saldoFinalDiaAnterior) || !isFinite(saldoFinalDiaAnterior)) {
+        console.warn('❌ Resultado inválido, devolviendo 0');
+        return 0;
+      }
 
-      // El SALDO FINAL del día anterior = SALDO NETO PAGADURÍA + SUB-TOTAL TESORERÍA
-      const saldoFinalDiaAnterior = saldoNetoPagaduria + subtotalTesoreria;
-
-      return isNaN(saldoFinalDiaAnterior) ? 0 : saldoFinalDiaAnterior;
+      return saldoFinalDiaAnterior;
     } catch (error) {
-      console.error('Error calculando saldo inicial desde día anterior:', error);
+      console.error('💥 Error calculando saldo inicial desde día anterior, usando 0:', error);
       return 0;
     }
   };
+
+  // Función para guardar automáticamente el SALDO FINAL CUENTAS como transacción
+  const guardarSaldoFinalCuentasAutomatico = async (cuentaId: number, saldoFinal: number) => {
+    try {
+      // Buscar el concepto SALDO FINAL CUENTAS
+      const saldoFinalCuentasConcepto = conceptos.find(c => c.nombre === 'SALDO FINAL CUENTAS');
+      
+      if (!saldoFinalCuentasConcepto) {
+        console.warn('❌ No se encontró el concepto SALDO FINAL CUENTAS para guardar');
+        return false;
+      }
+
+      console.log('💾 Guardando SALDO FINAL CUENTAS automáticamente:', {
+        conceptoId: saldoFinalCuentasConcepto.id,
+        cuentaId: cuentaId,
+        saldoFinal: saldoFinal,
+        fecha: selectedDate
+      });
+
+      // Usar la función de guardar transacciones existente
+      const resultado = await guardarTransaccion(
+        saldoFinalCuentasConcepto.id!, 
+        cuentaId, 
+        saldoFinal
+      );
+
+      if (resultado) {
+        console.log('✅ SALDO FINAL CUENTAS guardado correctamente para cuenta:', cuentaId);
+        return true;
+      } else {
+        console.error('❌ Error guardando SALDO FINAL CUENTAS para cuenta:', cuentaId);
+        return false;
+      }
+    } catch (error) {
+      console.error('💥 Error guardando SALDO FINAL CUENTAS automáticamente:', error);
+      return false;
+    }
+  };
+
+  // Función para procesar SALDOS INICIALES usando el backend (automático y silencioso)
+  const procesarSaldosInicialesAutomatico = async (fecha?: string) => {
+    try {
+      const fechaProceso = fecha || selectedDate;
+      
+      console.log('� Verificando necesidad de SALDOS INICIALES para fecha:', fechaProceso);
+      
+      // Primero verificar si es necesario procesar
+      const verificacion = await SaldoInicialService.verificarNecesidadSaldosIniciales(fechaProceso);
+      
+      console.log('📋 Resultado de verificación:', verificacion);
+      
+      if (!verificacion.necesario) {
+        console.log('✅ SALDOS INICIALES ya están actualizados:', verificacion.razon);
+        return;
+      }
+      
+      console.log('�🔥 Procesando SALDOS INICIALES automáticamente para fecha:', fechaProceso);
+      
+      // Llamar al servicio del backend
+      const resultado = await SaldoInicialService.calcularSaldoInicial({
+        fecha: fechaProceso
+      });
+      
+      console.log('✅ Resultado automático del backend:', resultado);
+      
+      if (resultado.success && resultado.transacciones_creadas > 0) {
+        console.log(`✅ SALDOS INICIALES procesados automáticamente:`, {
+          fecha: fechaProceso,
+          transacciones_creadas: resultado.transacciones_creadas,
+          mensaje: resultado.message
+        });
+        
+        // Forzar actualización de las transacciones sin recargar la página
+        setForceUpdate(prev => prev + 1);
+      }
+      
+    } catch (error) {
+      console.error('❌ Error procesando SALDOS INICIALES automáticamente:', error);
+      // No mostrar alerta, solo log para debugging
+    }
+  };
+
+  // Función wrapper para obtener montos aplicando la lógica de signos automáticos
+  const obtenerMontoConSignos = (conceptoId: number, cuentaId: number): number => {
+    try {
+      // Validar parámetros de entrada
+      if (!conceptoId || !cuentaId) {
+        console.warn('Parámetros inválidos en obtenerMontoConSignos:', { conceptoId, cuentaId });
+        return 0;
+      }
+      
+      // Obtener el monto original
+      const montoOriginal = obtenerMonto(conceptoId, cuentaId);
+      
+      // Validar que el monto sea un número válido
+      if (!isFinite(montoOriginal) || isNaN(montoOriginal)) {
+        console.warn('Monto no válido obtenido:', montoOriginal);
+        return 0;
+      }
+      
+      // Buscar el concepto para obtener su código
+      const concepto = conceptos.find(c => c.id === conceptoId);
+      
+      if (!concepto) {
+        console.warn('Concepto no encontrado para ID:', conceptoId);
+        return montoOriginal; // Si no encontramos el concepto, devolver valor original
+      }
+      
+      // Aplicar la lógica de signos según el código
+      const resultado = aplicarSignoSegunCodigo(montoOriginal, concepto.codigo || '');
+      
+      return isFinite(resultado) ? resultado : 0;
+      
+    } catch (error) {
+      console.error('Error aplicando signos al obtener monto:', error);
+      // Fallback seguro al método original
+      try {
+        const fallback = obtenerMonto(conceptoId, cuentaId);
+        return isFinite(fallback) ? fallback : 0;
+      } catch (fallbackError) {
+        console.error('Error en fallback de obtenerMontoConSignos:', fallbackError);
+        return 0;
+      }
+    }
+  };
+
+  // Función wrapper para guardar transacciones aplicando la lógica de signos automáticos
+  const guardarTransaccionConSignos = async (
+    conceptoId: number, 
+    cuentaId: number | null, 
+    monto: number, 
+    companiaId?: number
+  ): Promise<boolean> => {
+    try {
+      // Buscar el concepto para obtener su código
+      const concepto = conceptos.find(c => c.id === conceptoId);
+      
+      if (!concepto) {
+        console.error('❌ No se encontró el concepto con ID:', conceptoId);
+        return false;
+      }
+      
+      console.log('💰 Guardando transacción:', {
+        concepto: concepto.nombre,
+        codigo: concepto.codigo,
+        montoIngresado: monto,
+        conceptoId,
+        cuentaId,
+        companiaId
+      });
+      
+      // OPCIÓN 1: Respetar el valor que ingresa el usuario sin modificar el signo
+      // El usuario es responsable de ingresar el signo correcto
+      const montoFinal = monto;
+      
+      console.log('📤 Enviando al backend:', {
+        montoFinal,
+        sinModificacion: true
+      });
+      
+      // Llamar a la función original con el monto sin modificar
+      const resultado = await guardarTransaccion(conceptoId, cuentaId, montoFinal, companiaId);
+      
+      console.log('📋 Resultado del backend:', {
+        success: resultado,
+        concepto: concepto.nombre,
+        monto: montoFinal
+      });
+      
+      if (!resultado) {
+        console.error('❌ El backend retornó false para:', {
+          concepto: concepto.nombre,
+          monto: montoFinal,
+          errorContext: 'Operación de guardado falló'
+        });
+      } else {
+        console.log('✅ Guardado exitoso en backend para:', {
+          concepto: concepto.nombre,
+          monto: montoFinal
+        });
+      }
+      
+      return resultado;
+      
+    } catch (error) {
+      console.error('❌ Error aplicando signos a transacción:', error);
+      return false;
+    }
+  };
+
+  // useEffect para procesar SALDOS INICIALES automáticamente
+  useEffect(() => {
+    // Solo ejecutar si ya tenemos datos cargados
+    if (!loading && bankAccounts.length > 0 && conceptos.length > 0) {
+      
+      // Ejecutar el procesamiento automático después de un pequeño delay
+      // para asegurar que todos los datos estén listos
+      const timer = setTimeout(() => {
+        procesarSaldosInicialesAutomatico();
+      }, 1000);
+
+      return () => clearTimeout(timer);
+    }
+  }, [selectedDate, loading, bankAccounts.length, conceptos.length]); // Re-ejecutar cuando cambie la fecha o se carguen los datos
 
   if (loading) {
     return (
@@ -507,7 +844,7 @@ const DashboardTesoreria: React.FC = () => {
             {transaccionesError && (
               <span className="px-2 py-1 text-xs bg-red-100 text-red-800 rounded-full flex items-center">
                 <AlertCircle className="w-3 h-3 mr-1" />
-                Error: {transaccionesError}
+                Error: {typeof transaccionesError === 'string' ? transaccionesError : 'Error desconocido'}
               </span>
             )}
             {!transaccionesLoading && !transaccionesError && (
@@ -531,6 +868,7 @@ const DashboardTesoreria: React.FC = () => {
             <RefreshCw className="h-4 w-4" />
             <span>Actualizar</span>
           </button>
+          
           <button className="flex items-center space-x-2 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm">
             <Download className="h-4 w-4" />
             <span>Exportar</span>
@@ -599,7 +937,13 @@ const DashboardTesoreria: React.FC = () => {
 
             {/* BODY - CONCEPTOS Y DATOS */}
             <tbody>
-              {conceptos.map((concepto, conceptoIdx) => (
+              {conceptos
+                .filter(concepto => 
+                  // Filtrar los conceptos que ya se muestran como filas hardcodeadas al final
+                  concepto.nombre !== 'SUB-TOTAL TESORERÍA' && 
+                  concepto.nombre !== 'SALDO FINAL CUENTAS'
+                )
+                .map((concepto, conceptoIdx) => (
                 <tr key={conceptoIdx} className={getRowColor(concepto.categoria, concepto.tipo, concepto.nombre)}>
                   {/* COLUMNA DE TIPO OP */}
                   <td className={`border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-900 dark:text-white font-medium sticky left-0 z-10 ${getRowColor(concepto.categoria, concepto.tipo, concepto.nombre)}`}>
@@ -636,7 +980,7 @@ const DashboardTesoreria: React.FC = () => {
                     
                     if (esSaldoNetoPagaduria) {
                       // Para SALDO NETO INICIAL PAGADURÍA, mostrar valor calculado (no editable)
-                      const valorCalculado = calculateSaldoNetoPagaduria(account.id);
+                      const valorCalculado = safeNumericValue(calculateSaldoNetoPagaduria(account.id));
                       
                       return (
                         <td key={`data-${account.id}`} className="border border-gray-400 dark:border-gray-500 px-1 py-1 text-center text-xs bg-yellow-50 dark:bg-yellow-900/20">
@@ -651,7 +995,7 @@ const DashboardTesoreria: React.FC = () => {
                       );
                     } else if (esSaldoInicial) {
                       // Para SALDO INICIAL, mostrar valor del SALDO FINAL CUENTAS del día anterior (no editable)
-                      const valorSaldoInicialDiaAnterior = calculateSaldoInicialDesdeDiaAnterior(account.id);
+                      const valorSaldoInicialDiaAnterior = safeNumericValue(calculateSaldoInicialDesdeDiaAnterior(account.id));
                       
                       return (
                         <td key={`data-${account.id}`} className="border border-gray-400 dark:border-gray-500 px-1 py-1 text-center text-xs bg-purple-50 dark:bg-purple-900/20">
@@ -666,16 +1010,17 @@ const DashboardTesoreria: React.FC = () => {
                       );
                     } else {
                       // Para otros conceptos, usar celda editable normal
-                      const valorCuenta = concepto.id ? obtenerMonto(concepto.id, account.id) : 0;
+                      const valorCuenta = concepto.id ? obtenerMontoConSignos(concepto.id, account.id) : 0;
+                      const valorSeguro = safeNumericValue(valorCuenta);
                       
                       return (
                         <td key={`data-${account.id}`} className="border border-gray-400 dark:border-gray-500 px-1 py-1 text-center text-xs">
                           <CeldaEditable
-                            valor={valorCuenta}
+                            valor={valorSeguro}
                             conceptoId={concepto.id || 0}
                             cuentaId={account.id}
                             companiaId={account.compania.id}
-                            onGuardar={guardarTransaccion}
+                            onGuardar={guardarTransaccionConSignos}
                             disabled={!concepto.id || transaccionesLoading}
                           />
                         </td>
@@ -686,14 +1031,19 @@ const DashboardTesoreria: React.FC = () => {
                   {/* Columna TOTALES */}
                   <td className="border-2 border-green-400 dark:border-green-500 px-2 py-1 text-center text-xs bg-green-50 dark:bg-green-900/20">
                     {(() => {
-                      const total = calculateRowTotal(concepto);
-                      return total !== 0 ? (
-                        <span className={`font-bold ${total < 0 ? 'text-red-700 dark:text-red-400' : 'text-green-700 dark:text-green-400'}`}>
-                          {total < 0 ? `(${formatCurrency(Math.abs(total))})` : formatCurrency(total)}
-                        </span>
-                      ) : (
-                        <span className="text-gray-400 dark:text-gray-500">—</span>
-                      );
+                      try {
+                        const total = safeNumericValue(calculateRowTotal(concepto));
+                        return total !== 0 ? (
+                          <span className={`font-bold ${total < 0 ? 'text-red-700 dark:text-red-400' : 'text-green-700 dark:text-green-400'}`}>
+                            {total < 0 ? `(${formatCurrency(Math.abs(total))})` : formatCurrency(total)}
+                          </span>
+                        ) : (
+                          <span className="text-gray-400 dark:text-gray-500">—</span>
+                        );
+                      } catch (error) {
+                        console.error('Error calculando total para concepto:', concepto.nombre, error);
+                        return <span className="text-red-500 text-xs">Error</span>;
+                      }
                     })()}
                   </td>
                 </tr>
@@ -732,7 +1082,14 @@ const DashboardTesoreria: React.FC = () => {
                 {/* Columna TOTALES */}
                 <td className="border-2 border-green-400 dark:border-green-500 px-2 py-2 text-center font-bold text-gray-900 dark:text-white bg-green-100 dark:bg-green-900/30">
                   {(() => {
-                    const totalSubtotal = calculateSubtotalTesoreria();
+                    // CORREGIDO: Sumar el SUB-TOTAL TESORERÍA de cada cuenta individual
+                    const totalSubtotal = bankAccounts.reduce((sum, account) => {
+                      const subtotalCuenta = calculateSubtotalTesoreria(account.id);
+                      console.log(`🧮 SUB-TOTAL TESORERÍA - Cuenta ${account.numero_cuenta}: ${subtotalCuenta}`);
+                      return sum + (Number(subtotalCuenta) || 0);
+                    }, 0);
+                    console.log(`🎯 SUB-TOTAL TESORERÍA - TOTAL CALCULADO: ${totalSubtotal}`);
+                    
                     const totalValido = !isNaN(totalSubtotal) && isFinite(totalSubtotal) ? totalSubtotal : 0;
                     
                     return totalValido !== 0 ? (
@@ -772,7 +1129,14 @@ const DashboardTesoreria: React.FC = () => {
                 {/* Columna TOTALES */}
                 <td className="border-2 border-green-400 dark:border-green-500 px-1 py-2 text-center text-xs bg-green-50 dark:bg-green-900/20">
                   {(() => {
-                    const totalSaldoFinal = calculateSaldoFinalCuentas();
+                    // CORREGIDO: Sumar el SALDO FINAL CUENTAS de cada cuenta individual
+                    const totalSaldoFinal = bankAccounts.reduce((sum, account) => {
+                      const saldoFinalCuenta = calculateSaldoFinalCuentas(account.id);
+                      console.log(`🧮 SALDO FINAL CUENTAS - Cuenta ${account.numero_cuenta}: ${saldoFinalCuenta}`);
+                      return sum + (Number(saldoFinalCuenta) || 0);
+                    }, 0);
+                    console.log(`🎯 SALDO FINAL CUENTAS - TOTAL CALCULADO: ${totalSaldoFinal}`);
+                    
                     return totalSaldoFinal !== 0 ? (
                       <span className={`font-bold ${totalSaldoFinal < 0 ? 'text-red-700 dark:text-red-400' : 'text-green-700 dark:text-green-400'}`}>
                         {totalSaldoFinal < 0 ? `(${formatCurrency(Math.abs(totalSaldoFinal))})` : formatCurrency(totalSaldoFinal)}
@@ -868,4 +1232,13 @@ const DashboardTesoreria: React.FC = () => {
   );
 };
 
-export default DashboardTesoreria;
+// Componente wrapper con ErrorBoundary
+const DashboardTesoreriaWithErrorBoundary: React.FC = () => {
+  return (
+    <ErrorBoundary>
+      <DashboardTesoreria />
+    </ErrorBoundary>
+  );
+};
+
+export default DashboardTesoreriaWithErrorBoundary;

@@ -4,15 +4,13 @@ export interface ConceptoFlujoCaja {
   id: number;
   codigo: string;
   nombre: string;
-  descripcion?: string;
   area: 'tesoreria' | 'pagaduria' | 'ambas';
-  tipo_movimiento: 'ingreso' | 'egreso' | 'neutral';
+  tipo: string; // Cambiado a string para aceptar cualquier valor
   activo: boolean;
-  orden: number;
-  categoria?: string;
+  orden_display: number;
   depende_de_concepto_id?: number;
-  tipo_dependencia?: 'suma' | 'resta' | 'multiplicacion' | 'division';
-  factor_dependencia?: number;
+  tipo_dependencia?: 'copia' | 'suma' | 'resta';
+  concepto_dependiente?: ConceptoFlujoCaja | null;
   created_at: string;
   updated_at: string;
 }
@@ -81,11 +79,11 @@ export const useConceptosFlujoCaja = (): UseConceptosFlujoCajaResult => {
   // Filtrar conceptos por área
   const conceptosTesoreria = conceptos
     .filter(concepto => concepto.area === 'tesoreria' || concepto.area === 'ambas')
-    .sort((a, b) => a.orden - b.orden);
+    .sort((a, b) => a.orden_display - b.orden_display);
 
   const conceptosPagaduria = conceptos
     .filter(concepto => concepto.area === 'pagaduria' || concepto.area === 'ambas')
-    .sort((a, b) => a.orden - b.orden);
+    .sort((a, b) => a.orden_display - b.orden_display);
 
   return {
     conceptos,

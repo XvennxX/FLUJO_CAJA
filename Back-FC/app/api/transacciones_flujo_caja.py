@@ -18,6 +18,7 @@ from ..schemas.flujo_caja import (
     AreaConceptoSchema
 )
 from ..services.transaccion_flujo_caja_service import TransaccionFlujoCajaService
+from ..services.dependencias_flujo_caja_service import DependenciasFlujoCajaService
 from ..api.auth import get_current_user
 
 router = APIRouter(prefix="/api/transacciones-flujo-caja", tags=["Transacciones Flujo de Caja"])
@@ -30,13 +31,23 @@ def crear_transaccion(
 ):
     """Crear una nueva transacción de flujo de caja"""
     try:
+        print(f"🚀 Creando transacción: {transaccion_data.dict()}")
+        print(f"👤 Usuario: {current_user.id}")
+        
         service = TransaccionFlujoCajaService(db)
         transaccion = service.crear_transaccion(transaccion_data, current_user.id)
+        
+        print(f"✅ Transacción creada exitosamente: ID {transaccion.id}")
         return transaccion
     except ValueError as e:
+        print(f"❌ Error de validación: {str(e)}")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error interno del servidor")
+        print(f"💥 Error interno: {str(e)}")
+        print(f"💥 Tipo de error: {type(e).__name__}")
+        import traceback
+        print(f"💥 Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error interno del servidor: {str(e)}")
 
 @router.get("/fecha/{fecha}", response_model=List[TransaccionFlujoCajaResponse])
 def obtener_transacciones_por_fecha(
@@ -47,6 +58,21 @@ def obtener_transacciones_por_fecha(
 ):
     """Obtener todas las transacciones de una fecha específica"""
     service = TransaccionFlujoCajaService(db)
+    
+    # 🔥 AUTO-INICIALIZACIÓN: Asegurar que existe SALDO INICIAL para esta fecha
+    dependencias_service = DependenciasFlujoCajaService(db)
+    try:
+        # Ejecutar auto-cálculo de SALDO INICIAL si es necesario
+        dependencias_service._procesar_saldo_inicial_automatico(
+            fecha=fecha,
+            compania_id=getattr(current_user, "compania_id", 1),
+            usuario_id=getattr(current_user, "id", 1)
+        )
+    except Exception as e:
+        # Si hay error, log pero no fallar la consulta
+        import logging
+        logging.warning(f"Error en auto-inicialización SALDO INICIAL para {fecha}: {e}")
+    
     transacciones = service.obtener_transacciones_por_fecha(fecha, area)
     return transacciones
 
@@ -74,17 +100,27 @@ def actualizar_transaccion(
 ):
     """Actualizar una transacción existente"""
     try:
+        print(f"🔄 Actualizando transacción ID {transaccion_id}: {transaccion_data.dict()}")
+        print(f"👤 Usuario: {current_user.id}")
+        
         service = TransaccionFlujoCajaService(db)
         transaccion = service.actualizar_transaccion(transaccion_id, transaccion_data, current_user.id)
         
         if not transaccion:
+            print(f"❌ Transacción no encontrada: ID {transaccion_id}")
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transacción no encontrada")
         
+        print(f"✅ Transacción actualizada exitosamente: ID {transaccion.id}")
         return transaccion
     except ValueError as e:
+        print(f"❌ Error de validación en actualización: {str(e)}")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error interno del servidor")
+        print(f"💥 Error interno en actualización: {str(e)}")
+        print(f"💥 Tipo de error: {type(e).__name__}")
+        import traceback
+        print(f"💥 Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error interno del servidor: {str(e)}")
 
 @router.delete("/{transaccion_id}", status_code=status.HTTP_204_NO_CONTENT)
 def eliminar_transaccion(
