@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { formatCurrency } from '../../utils/formatters';
+import { esConceptoAutoCalculado } from '../../utils/conceptos';
 
 interface CeldaEditableProps {
   valor: number;
@@ -108,9 +109,13 @@ export const CeldaEditable: React.FC<CeldaEditableProps> = ({
     }
   }, [isEditing, valor]);
 
+  // Determinar si el campo está deshabilitado
+  const isAutoCalculated = esConceptoAutoCalculado(conceptoId);
+  const isDisabled = disabled || isAutoCalculated;
+
   // Manejar el click para iniciar edición
   const handleClick = () => {
-    if (!disabled) {
+    if (!isDisabled) {
       setIsEditing(true);
     }
   };
@@ -256,9 +261,12 @@ export const CeldaEditable: React.FC<CeldaEditableProps> = ({
 
   return (
     <div 
-      className="w-full h-full flex items-center justify-center cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors p-1"
+      className={`w-full h-full flex items-center justify-center transition-colors p-1 ${
+        isDisabled 
+          ? 'cursor-not-allowed bg-gray-100 dark:bg-gray-700/50 opacity-75'
+          : 'cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/20'
+      }`}
       onClick={handleClick}
-      title={disabled ? 'Campo no editable' : 'Click para editar'}
     >
       {(() => {
         try {
@@ -272,7 +280,7 @@ export const CeldaEditable: React.FC<CeldaEditableProps> = ({
           }
           
           return (
-            <span className={getValueStyle(valor)}>
+            <span className={`${getValueStyle(valor)} ${isDisabled ? 'text-gray-600 dark:text-gray-400' : ''}`}>
               {valor < 0 ? `(${formatCurrency(Math.abs(valor))})` : formatCurrency(valor)}
             </span>
           );

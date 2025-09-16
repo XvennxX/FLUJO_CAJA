@@ -1,13 +1,16 @@
 """
 API endpoints para gestión de transacciones de flujo de caja
 """
+import logging
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from datetime import date
 
+logger = logging.getLogger(__name__)
+
 from ..core.database import get_db
-from ..models import TransaccionFlujoCaja
+from ..models import TransaccionFlujoCaja, AreaTransaccion
 from ..schemas.flujo_caja import (
     TransaccionFlujoCajaCreate,
     TransaccionFlujoCajaUpdate, 
@@ -21,6 +24,7 @@ from ..services.transaccion_flujo_caja_service import TransaccionFlujoCajaServic
 from ..services.dependencias_flujo_caja_service import DependenciasFlujoCajaService
 from ..api.auth import get_current_user
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/transacciones-flujo-caja", tags=["Transacciones Flujo de Caja"])
 
 @router.post("/", response_model=TransaccionFlujoCajaResponse, status_code=status.HTTP_201_CREATED)
@@ -31,11 +35,41 @@ def crear_transaccion(
 ):
     """Crear una nueva transacción de flujo de caja"""
     try:
-        print(f"🚀 Creando transacción: {transaccion_data.dict()}")
-        print(f"👤 Usuario: {current_user.id}")
+        # 🚫 VALIDACIÓN: Verificar si es un concepto auto-calculado
+        conceptos_auto_calculados = [3, 52, 54, 82, 83, 84, 85]  # VENTANILLA, DIFERENCIA SALDOS, SALDO DIA ANTERIOR, SUBTOTAL MOVIMIENTO, etc.
+        
+        if transaccion_data.concepto_id in conceptos_auto_calculados:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"No se puede crear manualmente el concepto ID {transaccion_data.concepto_id}. Este valor se calcula automáticamente."
+            )
+        
+        logger.info(f"Creando transacción: concepto_id={transaccion_data.concepto_id}, monto={transaccion_data.monto}, usuario={current_user.id}")
         
         service = TransaccionFlujoCajaService(db)
         transaccion = service.crear_transaccion(transaccion_data, current_user.id)
+        
+        # 🔥 AUTO-RECÁLCULO COMPLETO: Procesar AMBOS dashboards para mantener consistencia
+        dependencias_service = DependenciasFlujoCajaService(db)
+        try:
+            resultados_completos = dependencias_service.procesar_dependencias_completas_ambos_dashboards(
+                fecha=transaccion_data.fecha,
+                concepto_modificado_id=transaccion_data.concepto_id,
+                cuenta_id=transaccion_data.cuenta_id,
+                compania_id=getattr(current_user, "compania_id", 1),
+                usuario_id=current_user.id
+            )
+            
+            total_updates = (
+                len(resultados_completos.get("tesoreria", [])) + 
+                len(resultados_completos.get("pagaduria", [])) + 
+                len(resultados_completos.get("cross_dashboard", []))
+            )
+            logger.info(f"Recálculo completo ejecutado: {total_updates} actualizaciones en ambos dashboards")
+            
+        except Exception as e:
+            logger.warning(f"Error en recálculo completo: {e}")
+            # No falla la creación si hay error en dependencias
         
         print(f"✅ Transacción creada exitosamente: ID {transaccion.id}")
         return transaccion
@@ -99,16 +133,50 @@ def actualizar_transaccion(
     current_user = Depends(get_current_user)
 ):
     """Actualizar una transacción existente"""
+    logger.info(f"🚨🚨🚨 API PUT /transacciones/{transaccion_id} LLAMADO 🚨🚨🚨")
+    logger.info(f"📋 Datos recibidos: {transaccion_data.model_dump()}")
+    logger.info(f"👤 Usuario: {current_user.id if hasattr(current_user, 'id') else 'Unknown'}")
     try:
+        # � VALIDACIÓN: Verificar si es un concepto auto-calculado
+        service = TransaccionFlujoCajaService(db)
+        transaccion_existente = service.obtener_transaccion_por_id(transaccion_id)
+        
+        if not transaccion_existente:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transacción no encontrada")
+        
+        conceptos_auto_calculados = [3, 52, 54, 82, 83, 84, 85]  # VENTANILLA, DIFERENCIA SALDOS, SALDO DIA ANTERIOR, SUBTOTAL MOVIMIENTO, etc.
+        
+        if transaccion_existente.concepto_id in conceptos_auto_calculados:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"No se puede modificar manualmente el concepto ID {transaccion_existente.concepto_id}. Este valor se calcula automáticamente."
+            )
+        
         print(f"🔄 Actualizando transacción ID {transaccion_id}: {transaccion_data.dict()}")
         print(f"👤 Usuario: {current_user.id}")
         
-        service = TransaccionFlujoCajaService(db)
         transaccion = service.actualizar_transaccion(transaccion_id, transaccion_data, current_user.id)
         
-        if not transaccion:
-            print(f"❌ Transacción no encontrada: ID {transaccion_id}")
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transacción no encontrada")
+        # 🔥 AUTO-RECÁLCULO COMPLETO: Procesar AMBOS dashboards tras actualización
+        dependencias_service = DependenciasFlujoCajaService(db)
+        try:
+            resultados_completos = dependencias_service.procesar_dependencias_completas_ambos_dashboards(
+                fecha=transaccion.fecha,
+                concepto_modificado_id=transaccion.concepto_id,
+                cuenta_id=transaccion.cuenta_id,
+                compania_id=getattr(current_user, "compania_id", 1),
+                usuario_id=current_user.id
+            )
+            
+            total_updates = (
+                len(resultados_completos.get("tesoreria", [])) + 
+                len(resultados_completos.get("pagaduria", [])) + 
+                len(resultados_completos.get("cross_dashboard", []))
+            )
+            print(f"🔄 Recálculo completo tras actualización: {total_updates} actualizaciones en ambos dashboards")
+            
+        except Exception as e:
+            print(f"⚠️ Error en recálculo completo tras actualización: {e}")
         
         print(f"✅ Transacción actualizada exitosamente: ID {transaccion.id}")
         return transaccion
@@ -121,6 +189,56 @@ def actualizar_transaccion(
         import traceback
         print(f"💥 Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error interno del servidor: {str(e)}")
+
+# MÉTODO DUPLICADO ELIMINADO - Solo mantenemos el primer método PUT con auto-cálculo
+
+@router.post("/recalcular-dependencias/{fecha}", status_code=status.HTTP_200_OK)
+def recalcular_dependencias_fecha(
+    fecha: date,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """
+    Endpoint para recalcular TODAS las dependencias de una fecha específica.
+    Útil para sincronización manual o después de cambios importantes.
+    """
+    try:
+        print(f"🔄 Iniciando recálculo manual para fecha {fecha}")
+        
+        dependencias_service = DependenciasFlujoCajaService(db)
+        resultados_completos = dependencias_service.procesar_dependencias_completas_ambos_dashboards(
+            fecha=fecha,
+            compania_id=getattr(current_user, "compania_id", 1),
+            usuario_id=current_user.id
+        )
+        
+        total_updates = (
+            len(resultados_completos.get("tesoreria", [])) + 
+            len(resultados_completos.get("pagaduria", [])) + 
+            len(resultados_completos.get("cross_dashboard", []))
+        )
+        
+        resultado = {
+            "mensaje": f"Recálculo completado para {fecha}",
+            "fecha": fecha,
+            "total_actualizaciones": total_updates,
+            "detalles": {
+                "tesoreria_updates": len(resultados_completos.get("tesoreria", [])),
+                "pagaduria_updates": len(resultados_completos.get("pagaduria", [])),
+                "cross_dashboard_updates": len(resultados_completos.get("cross_dashboard", []))
+            },
+            "resultados_completos": resultados_completos
+        }
+        
+        print(f"✅ Recálculo manual completado: {total_updates} actualizaciones")
+        return resultado
+        
+    except Exception as e:
+        print(f"❌ Error en recálculo manual: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error en recálculo: {str(e)}"
+        )
 
 @router.delete("/{transaccion_id}", status_code=status.HTTP_204_NO_CONTENT)
 def eliminar_transaccion(
@@ -189,6 +307,22 @@ def obtener_dashboard_pagaduria(
     current_user = Depends(get_current_user)
 ):
     """Obtener datos específicos para el dashboard de pagaduría"""
+    
+    # 🔥 AUTO-PROCESAMIENTO: Ejecutar dependencias de pagaduría
+    dependencias_service = DependenciasFlujoCajaService(db)
+    try:
+        # Procesar dependencias automáticas de pagaduría
+        dependencias_service.procesar_dependencias_avanzadas(
+            fecha=fecha,
+            area=AreaTransaccionSchema.pagaduria,
+            compania_id=getattr(current_user, "compania_id", 1),
+            usuario_id=getattr(current_user, "id", 1)
+        )
+    except Exception as e:
+        # Si hay error, log pero no fallar la consulta
+        import logging
+        logging.warning(f"Error en auto-procesamiento pagaduría para {fecha}: {e}")
+    
     service = TransaccionFlujoCajaService(db)
     flujo_diario = service.obtener_flujo_caja_diario(fecha, AreaConceptoSchema.pagaduria)
     return flujo_diario

@@ -3,6 +3,7 @@ import { Building2, Download, RefreshCw, AlertCircle } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { formatCurrency } from '../../utils/formatters';
 import { formatDateString } from '../../utils/dateUtils';
+import { isConceptoAutoCalculado } from '../../utils/conceptos';
 import { useTRM } from '../../hooks/useTRM';
 import { useConceptosFlujoCaja, ConceptoFlujoCaja } from '../../hooks/useConceptosFlujoCaja';
 import { useTransaccionesFlujoCaja } from '../../hooks/useTransaccionesFlujoCaja';
@@ -522,7 +523,7 @@ const DashboardPagaduria: React.FC = () => {
                           valor={obtenerMonto(concepto.id || 0, account.id)}
                           onGuardar={guardarTransaccion}
                           companiaId={account.compania?.id}
-                          disabled={!concepto.id} // Deshabilitar si no hay ID del concepto
+                          disabled={isConceptoAutoCalculado(concepto.id)} // 🚫 Deshabilitar conceptos auto-calculados
                         />
                       )}
                     </td>

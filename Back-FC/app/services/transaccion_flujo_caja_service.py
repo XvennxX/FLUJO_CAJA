@@ -2,11 +2,14 @@
 Servicios para el manejo de transacciones de flujo de caja
 Lógica de negocio para CRUD, cálculos automáticos y reportes
 """
+import logging
 from typing import List, Optional, Dict, Any, Tuple
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import and_, or_, func, desc
 from datetime import date, datetime
 from decimal import Decimal
+
+logger = logging.getLogger(__name__)
 
 from ..models import (
     ConceptoFlujoCaja, TransaccionFlujoCaja, CuentaBancaria, Usuario,
@@ -75,14 +78,13 @@ class TransaccionFlujoCajaService:
         self.db.commit()
         self.db.refresh(db_transaccion)
         
-        # Procesar dependencias automáticas avanzadas
-        self.dependencias_service.procesar_dependencias_avanzadas(
-            fecha=transaccion_data.fecha, 
-            area=transaccion_data.area,
+        # 🔥 AUTO-RECÁLCULO COMPLETO: Procesar AMBOS dashboards para mantener consistencia total
+        self.dependencias_service.procesar_dependencias_completas_ambos_dashboards(
+            fecha=transaccion_data.fecha,
             concepto_modificado_id=transaccion_data.concepto_id,
             cuenta_id=transaccion_data.cuenta_id,
             compania_id=transaccion_data.compania_id,
-            usuario_id=usuario_id  # ← Pasar el usuario real
+            usuario_id=usuario_id
         )
         
         return db_transaccion
@@ -119,7 +121,7 @@ class TransaccionFlujoCajaService:
         }
         
         # Actualizar campos
-        update_data = transaccion_data.dict(exclude_unset=True)
+        update_data = transaccion_data.model_dump(exclude_unset=True)
         for field, value in update_data.items():
             setattr(db_transaccion, field, value)
         
@@ -139,16 +141,34 @@ class TransaccionFlujoCajaService:
         self.db.commit()
         self.db.refresh(db_transaccion)
         
-        # Procesar dependencias automáticas avanzadas si cambió la fecha, área o monto
+        # 🔥 AUTO-RECÁLCULO COMPLETO: Procesar AMBOS dashboards cuando se actualiza una transacción
+        logger.info(f"🔍 DEBUG actualizar_transaccion: update_data = {update_data}")
+        logger.info(f"🔍 DEBUG: 'fecha' in update_data = {'fecha' in update_data}")
+        logger.info(f"🔍 DEBUG: 'area' in update_data = {'area' in update_data}")
+        logger.info(f"🔍 DEBUG: 'monto' in update_data = {'monto' in update_data}")
+        
         if 'fecha' in update_data or 'area' in update_data or 'monto' in update_data:
+            logger.info(f"🎯 DEBUG: CONDICIÓN CUMPLIDA - Ejecutando auto-cálculo...")
             fecha_procesar = update_data.get('fecha', db_transaccion.fecha)
-            area_procesar = update_data.get('area', db_transaccion.area)
-            self.dependencias_service.procesar_dependencias_avanzadas(
-                fecha=fecha_procesar, 
-                area=area_procesar,
+            
+            # IMPORTANTE: Forzar flush para asegurar que los cambios sean visibles
+            # antes de ejecutar el recálculo de dependencias
+            self.db.flush()
+            logger.info(f"🔄 DEBUG: flush() ejecutado")
+            
+            # Usar recálculo completo en lugar de dependencias básicas para asegurar
+            # que conceptos como SUBTOTAL TESORERÍA se actualicen correctamente
+            logger.info(f"🚀 DEBUG: Llamando procesar_dependencias_completas_ambos_dashboards...")
+            resultado_dependencias = self.dependencias_service.procesar_dependencias_completas_ambos_dashboards(
+                fecha=fecha_procesar,
                 concepto_modificado_id=db_transaccion.concepto_id,
-                usuario_id=usuario_id  # ← Pasar el usuario real
+                cuenta_id=db_transaccion.cuenta_id,
+                compania_id=db_transaccion.compania_id,
+                usuario_id=usuario_id
             )
+            logger.info(f"✅ DEBUG: Auto-cálculo completado, resultado: {resultado_dependencias}")
+        else:
+            logger.info(f"❌ DEBUG: CONDICIÓN NO CUMPLIDA - Auto-cálculo NO ejecutado")
         
         return db_transaccion
     
@@ -165,11 +185,11 @@ class TransaccionFlujoCajaService:
         self.db.delete(db_transaccion)
         self.db.commit()
         
-        # Procesar dependencias automáticas avanzadas después de eliminar
-        self.dependencias_service.procesar_dependencias_avanzadas(
-            fecha=fecha, 
-            area=area,
-            concepto_modificado_id=concepto_id
+        # 🔥 AUTO-RECÁLCULO COMPLETO: Procesar AMBOS dashboards después de eliminar
+        self.dependencias_service.procesar_dependencias_completas_ambos_dashboards(
+            fecha=fecha,
+            concepto_modificado_id=concepto_id,
+            usuario_id=usuario_id
         )
         
         return True
@@ -353,3 +373,62 @@ class TransaccionFlujoCajaService:
                 self.db.add(transaccion_dependiente)
         
         self.db.commit()
+    
+    def actualizar_transaccion(
+        self, 
+        transaccion_id: int, 
+        transaccion_data: TransaccionFlujoCajaUpdate, 
+        usuario_id: int
+    ) -> TransaccionFlujoCaja:
+        """Actualizar una transacción existente"""
+        # Buscar la transacción
+        transaccion = self.db.query(TransaccionFlujoCaja).filter(
+            TransaccionFlujoCaja.id == transaccion_id
+        ).first()
+        
+        if not transaccion:
+            raise ValueError("Transacción no encontrada")
+        
+        # Guardar valores anteriores para auditoría
+        valores_anteriores = {
+            "monto": float(transaccion.monto),
+            "descripcion": transaccion.descripcion,
+            "fecha": transaccion.fecha.isoformat()
+        }
+        
+        # Actualizar campos
+        for field, value in transaccion_data.dict(exclude_unset=True).items():
+            setattr(transaccion, field, value)
+        
+        # Actualizar auditoría
+        auditoria_actual = transaccion.auditoria or {}
+        auditoria_actual.update({
+            "accion": "actualizacion",
+            "usuario_id": usuario_id,
+            "timestamp": datetime.now().isoformat(),
+            "valores_anteriores": valores_anteriores,
+            "campos_modificados": list(transaccion_data.dict(exclude_unset=True).keys())
+        })
+        transaccion.auditoria = auditoria_actual
+        
+        self.db.commit()
+        self.db.refresh(transaccion)
+        
+        return transaccion
+    
+    def eliminar_transaccion(self, transaccion_id: int, usuario_id: int) -> bool:
+        """Eliminar una transacción"""
+        transaccion = self.db.query(TransaccionFlujoCaja).filter(
+            TransaccionFlujoCaja.id == transaccion_id
+        ).first()
+        
+        if not transaccion:
+            return False
+        
+        # Auditoría de eliminación
+        logger.info(f"Eliminando transacción ID {transaccion_id} por usuario {usuario_id}")
+        
+        self.db.delete(transaccion)
+        self.db.commit()
+        
+        return True

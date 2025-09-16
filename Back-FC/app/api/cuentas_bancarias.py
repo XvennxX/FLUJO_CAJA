@@ -210,31 +210,18 @@ def get_all_banks(db: Session = Depends(get_db)):
     bancos = db.query(Banco).all()
     return bancos
 
-# Endpoint temporal de test para bancos (sin autenticación)
-@router.get("/test/banks", response_model=List[BancoResponse])
-def test_get_all_banks(db: Session = Depends(get_db)):
-    """TEST: Obtener todos los bancos disponibles (sin autenticación)"""
-    try:
-        bancos = db.query(Banco).all()
-        print(f"Bancos encontrados: {len(bancos)}")
-        for banco in bancos:
-            print(f"Banco: {banco.id} - {banco.nombre}")
-        return bancos
-    except Exception as e:
-        print(f"Error en test_get_all_banks: {e}")
-        import traceback
-        traceback.print_exc()
-        raise
+# ENDPOINTS DE TEST - COMENTADOS PARA PRODUCCIÓN
+# @router.get("/test/banks", response_model=List[BancoResponse])
+# def test_get_all_banks(db: Session = Depends(get_db)):
+#     """TEST: Obtener todos los bancos disponibles (sin autenticación)"""
+#     # Código comentado para producción
+#     pass
 
-# Endpoint simple de prueba
-@router.get("/test/banks-simple")
-def test_banks_simple(db: Session = Depends(get_db)):
-    """TEST: Endpoint simple para probar conexión"""
-    try:
-        bancos = db.query(Banco).all()
-        return {"count": len(bancos), "message": "Conexión exitosa"}
-    except Exception as e:
-        return {"error": str(e)}
+# @router.get("/test/banks-simple")
+# def test_banks_simple(db: Session = Depends(get_db)):
+#     """TEST: Endpoint simple para probar conexión"""
+#     # Código comentado para producción
+#     pass
 
 @router.post("/test/companies/{company_id}")
 def create_bank_account_test(company_id: int, cuenta_data: CuentaBancariaCreateForCompany, db: Session = Depends(get_db)):
