@@ -8,8 +8,11 @@ Sistema integral de gestión de flujo de caja desarrollado para Bolívar, que in
 FLUJO_CAJA/
 ├── 📁 Back-FC/              # Backend - API REST con FastAPI
 │   ├── app/                # Código principal de la aplicación
-│   ├── scripts/            # Scripts organizados (TRM, setup, utils)
+│   ├── tests/              # Tests automatizados organizados
+│   ├── scripts/            # Scripts de migración y utilidades
 │   ├── docs/               # Documentación del backend
+│   ├── docker/             # Configuración Docker
+│   ├── logs/               # Logs del sistema
 │   ├── requirements.txt    # Dependencias Python
 │   └── README.md          # Documentación del backend
 ├── 📁 Front-FC/             # Frontend - React + TypeScript
@@ -18,6 +21,11 @@ FLUJO_CAJA/
 │   ├── docs/              # Documentación del frontend
 │   ├── package.json       # Dependencias Node.js
 │   └── README.md         # Documentación del frontend
+├── 📁 tools/                # Herramientas y scripts generales
+│   ├── debug/             # Scripts de debug y análisis
+│   ├── setup/             # Scripts de configuración inicial
+│   ├── maintenance/       # Scripts de mantenimiento
+│   └── README.md         # Documentación de herramientas
 ├── 📁 docs/                 # Documentación global del proyecto
 ├── 📁 .venv/               # Entorno virtual Python (local)
 ├── .gitignore              # Archivos ignorados por Git
