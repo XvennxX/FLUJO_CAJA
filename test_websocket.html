@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Prueba WebSocket - Flujo de Caja</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+            font-weight: bold;
+        }
+        .connected { background-color: #d4edda; color: #155724; }
+        .disconnected { background-color: #f8d7da; color: #721c24; }
+        .connecting { background-color: #fff3cd; color: #856404; }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover { background-color: #0056b3; }
+        button:disabled { 
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        #log {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 10px;
+            height: 300px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .log-entry {
+            margin: 2px 0;
+            padding: 2px 0;
+            border-bottom: 1px solid #eee;
+        }
+        .log-info { color: #007bff; }
+        .log-success { color: #28a745; }
+        .log-error { color: #dc3545; }
+        .log-warning { color: #ffc107; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔌 Prueba WebSocket - Sistema de Flujo de Caja</h1>
+        
+        <div id="status" class="status disconnected">
+            ❌ Desconectado
+        </div>
+
+        <div class="controls">
+            <button id="connectBtn" onclick="connect()">Conectar WebSocket</button>
+            <button id="disconnectBtn" onclick="disconnect()" disabled>Desconectar</button>
+            <button id="pingBtn" onclick="sendPing()" disabled>Enviar Ping</button>
+            <button id="clearBtn" onclick="clearLog()">Limpiar Log</button>
+        </div>
+
+        <h3>📋 Log de Eventos</h3>
+        <div id="log"></div>
+
+        <div style="margin-top: 20px;">
+            <h3>📖 Instrucciones de Prueba:</h3>
+            <ol>
+                <li><strong>Conectar:</strong> Haz clic en "Conectar WebSocket"</li>
+                <li><strong>Abrir Dashboard:</strong> Abre <a href="http://localhost:5000" target="_blank">http://localhost:5000</a> en otra pestaña</li>
+                <li><strong>Modificar Datos:</strong> En el dashboard, modifica cualquier transacción</li>
+                <li><strong>Observar:</strong> Deberías ver mensajes WebSocket en este log</li>
+                <li><strong>Verificar:</strong> La otra pestaña debería actualizarse automáticamente</li>
+            </ol>
+        </div>
+    </div>
+
+    <script>
+        let ws = null;
+        let reconnectAttempts = 0;
+        const maxReconnectAttempts = 5;
+
+        function log(message, type = 'info') {
+            const logDiv = document.getElementById('log');
+            const entry = document.createElement('div');
+            entry.className = `log-entry log-${type}`;
+            
+            const timestamp = new Date().toLocaleTimeString();
+            entry.innerHTML = `[${timestamp}] ${message}`;
+            
+            logDiv.appendChild(entry);
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        function updateStatus(status, message) {
+            const statusDiv = document.getElementById('status');
+            const connectBtn = document.getElementById('connectBtn');
+            const disconnectBtn = document.getElementById('disconnectBtn');
+            const pingBtn = document.getElementById('pingBtn');
+
+            statusDiv.className = `status ${status}`;
+            
+            switch(status) {
+                case 'connected':
+                    statusDiv.innerHTML = '✅ ' + message;
+                    connectBtn.disabled = true;
+                    disconnectBtn.disabled = false;
+                    pingBtn.disabled = false;
+                    break;
+                case 'disconnected':
+                    statusDiv.innerHTML = '❌ ' + message;
+                    connectBtn.disabled = false;
+                    disconnectBtn.disabled = true;
+                    pingBtn.disabled = true;
+                    break;
+                case 'connecting':
+                    statusDiv.innerHTML = '🔄 ' + message;
+                    connectBtn.disabled = true;
+                    disconnectBtn.disabled = true;
+                    pingBtn.disabled = true;
+                    break;
+            }
+        }
+
+        function connect() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                log('WebSocket ya está conectado', 'warning');
+                return;
+            }
+
+            updateStatus('connecting', 'Conectando...');
+            log('🔌 Intentando conectar a WebSocket...', 'info');
+
+            try {
+                ws = new WebSocket('ws://localhost:8000/api/v1/api/transacciones-flujo-caja/ws');
+                
+                ws.onopen = function(event) {
+                    log('✅ WebSocket conectado exitosamente', 'success');
+                    updateStatus('connected', 'Conectado');
+                    reconnectAttempts = 0;
+                };
+
+                ws.onmessage = function(event) {
+                    try {
+                        const data = JSON.parse(event.data);
+                        log(`📨 Mensaje recibido: ${JSON.stringify(data, null, 2)}`, 'success');
+                        
+                        if (data.type === 'transaction_update') {
+                            log(`🔄 ¡Actualización de transacción detectada!`, 'success');
+                            log(`   └─ Total actualizaciones: ${data.total_dependencias_actualizadas || 'N/A'}`, 'info');
+                            
+                            // Simular notificación visual como en el dashboard real
+                            showNotification('Datos actualizados automáticamente');
+                        }
+                    } catch (e) {
+                        log(`📨 Mensaje recibido (raw): ${event.data}`, 'info');
+                    }
+                };
+
+                ws.onclose = function(event) {
+                    log(`❌ WebSocket cerrado. Código: ${event.code}, Razón: ${event.reason || 'Desconocida'}`, 'error');
+                    updateStatus('disconnected', 'Desconectado');
+                    
+                    // Intentar reconectar automáticamente
+                    if (reconnectAttempts < maxReconnectAttempts) {
+                        reconnectAttempts++;
+                        log(`🔄 Reintentando conexión (${reconnectAttempts}/${maxReconnectAttempts}) en 3 segundos...`, 'warning');
+                        setTimeout(connect, 3000);
+                    }
+                };
+
+                ws.onerror = function(error) {
+                    log(`❌ Error WebSocket: ${error}`, 'error');
+                    updateStatus('disconnected', 'Error de conexión');
+                };
+
+            } catch (error) {
+                log(`❌ Error creando WebSocket: ${error}`, 'error');
+                updateStatus('disconnected', 'Error');
+            }
+        }
+
+        function disconnect() {
+            if (ws) {
+                log('🔌 Desconectando WebSocket...', 'info');
+                ws.close(1000, 'Desconexión manual');
+                ws = null;
+                reconnectAttempts = maxReconnectAttempts; // Evitar reconexión automática
+            }
+        }
+
+        function sendPing() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                log('📤 Enviando ping...', 'info');
+                ws.send(JSON.stringify({type: 'ping', timestamp: Date.now()}));
+            } else {
+                log('❌ WebSocket no está conectado', 'error');
+            }
+        }
+
+        function clearLog() {
+            document.getElementById('log').innerHTML = '';
+            log('🧹 Log limpiado', 'info');
+        }
+
+        function showNotification(message) {
+            // Crear notificación similar a la del dashboard
+            const notification = document.createElement('div');
+            notification.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                background-color: #28a745;
+                color: white;
+                padding: 10px 20px;
+                border-radius: 5px;
+                box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+                z-index: 9999;
+                transform: translateX(100%);
+                transition: transform 0.3s ease;
+            `;
+            notification.innerHTML = `
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <div style="width: 8px; height: 8px; background: white; border-radius: 50%; animation: pulse 1s infinite;"></div>
+                    <span>${message}</span>
+                </div>
+            `;
+            
+            document.body.appendChild(notification);
+            
+            // Animar entrada
+            setTimeout(() => {
+                notification.style.transform = 'translateX(0)';
+            }, 100);
+            
+            // Remover después de 3 segundos
+            setTimeout(() => {
+                notification.style.transform = 'translateX(100%)';
+                setTimeout(() => {
+                    if (notification.parentNode) {
+                        notification.parentNode.removeChild(notification);
+                    }
+                }, 300);
+            }, 3000);
+        }
+
+        // Auto-conectar al cargar la página
+        window.onload = function() {
+            log('🚀 Página cargada. Lista para conectar WebSocket.', 'info');
+        };
+
+        // Limpiar al cerrar la página
+        window.onbeforeunload = function() {
+            if (ws) {
+                ws.close();
+            }
+        };
+    </script>
+</body>
+</html>

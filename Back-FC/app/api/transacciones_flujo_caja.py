@@ -3,9 +3,10 @@ API endpoints para gestión de transacciones de flujo de caja
 """
 import logging
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 from datetime import date
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -23,12 +24,13 @@ from ..schemas.flujo_caja import (
 from ..services.transaccion_flujo_caja_service import TransaccionFlujoCajaService
 from ..services.dependencias_flujo_caja_service import DependenciasFlujoCajaService
 from ..api.auth import get_current_user
+from ..core.websocket import websocket_manager
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/transacciones-flujo-caja", tags=["Transacciones Flujo de Caja"])
 
 @router.post("/", response_model=TransaccionFlujoCajaResponse, status_code=status.HTTP_201_CREATED)
-def crear_transaccion(
+async def crear_transaccion(
     transaccion_data: TransaccionFlujoCajaCreate,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
@@ -36,7 +38,7 @@ def crear_transaccion(
     """Crear una nueva transacción de flujo de caja"""
     try:
         # 🚫 VALIDACIÓN: Verificar si es un concepto auto-calculado
-        conceptos_auto_calculados = [3, 52, 54, 82, 83, 84, 85]  # VENTANILLA, DIFERENCIA SALDOS, SALDO DIA ANTERIOR, SUBTOTAL MOVIMIENTO, etc.
+        conceptos_auto_calculados = [2, 52, 54, 82, 83, 84, 85]  # CONSUMO, DIFERENCIA SALDOS, SALDO DIA ANTERIOR, SUBTOTAL MOVIMIENTO, etc.
         
         if transaccion_data.concepto_id in conceptos_auto_calculados:
             raise HTTPException(
@@ -70,6 +72,24 @@ def crear_transaccion(
         except Exception as e:
             logger.warning(f"Error en recálculo completo: {e}")
             # No falla la creación si hay error en dependencias
+        
+        # 📡 NOTIFICACIÓN WEBSOCKET: Nueva transacción creada
+        try:
+            await websocket_manager.broadcast_update({
+                "type": "transaccion_created",
+                "transaccion_id": transaccion.id,
+                "concepto_id": transaccion.concepto_id,
+                "area": transaccion.area.value if hasattr(transaccion.area, 'value') else str(transaccion.area),
+                "fecha": transaccion.fecha.isoformat(),
+                "cuenta_id": transaccion.cuenta_id,
+                "monto": float(transaccion.monto),
+                "message": f"Nueva transacción creada",
+                "user_id": current_user.id
+            })
+            print(f"📡 Notificación WebSocket enviada: nueva transacción creada")
+            
+        except Exception as e:
+            print(f"⚠️ Error enviando notificación WebSocket: {e}")
         
         print(f"✅ Transacción creada exitosamente: ID {transaccion.id}")
         return transaccion
@@ -126,7 +146,7 @@ def obtener_transaccion(
     return transaccion
 
 @router.put("/{transaccion_id}", response_model=TransaccionFlujoCajaResponse)
-def actualizar_transaccion(
+async def actualizar_transaccion(
     transaccion_id: int,
     transaccion_data: TransaccionFlujoCajaUpdate,
     db: Session = Depends(get_db),
@@ -144,7 +164,7 @@ def actualizar_transaccion(
         if not transaccion_existente:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transacción no encontrada")
         
-        conceptos_auto_calculados = [3, 52, 54, 82, 83, 84, 85]  # VENTANILLA, DIFERENCIA SALDOS, SALDO DIA ANTERIOR, SUBTOTAL MOVIMIENTO, etc.
+        conceptos_auto_calculados = [2, 52, 54, 82, 83, 84, 85]  # CONSUMO, DIFERENCIA SALDOS, SALDO DIA ANTERIOR, SUBTOTAL MOVIMIENTO, etc.
         
         if transaccion_existente.concepto_id in conceptos_auto_calculados:
             raise HTTPException(
@@ -174,6 +194,25 @@ def actualizar_transaccion(
                 len(resultados_completos.get("cross_dashboard", []))
             )
             print(f"🔄 Recálculo completo tras actualización: {total_updates} actualizaciones en ambos dashboards")
+            
+            # 📡 NOTIFICACIÓN WEBSOCKET: Enviar actualización en tiempo real
+            try:
+                await websocket_manager.broadcast_update({
+                    "type": "transaccion_updated",
+                    "transaccion_id": transaccion.id,
+                    "concepto_id": transaccion.concepto_id,
+                    "area": transaccion.area.value if hasattr(transaccion.area, 'value') else str(transaccion.area),
+                    "fecha": transaccion.fecha.isoformat(),
+                    "cuenta_id": transaccion.cuenta_id,
+                    "monto_nuevo": float(transaccion.monto),
+                    "total_dependencias_actualizadas": total_updates,
+                    "message": f"Transacción actualizada - {total_updates} dependencias recalculadas",
+                    "user_id": current_user.id
+                })
+                print(f"📡 Notificación WebSocket enviada: {total_updates} actualizaciones")
+                
+            except Exception as e:
+                print(f"⚠️ Error enviando notificación WebSocket: {e}")
             
         except Exception as e:
             print(f"⚠️ Error en recálculo completo tras actualización: {e}")
@@ -376,3 +415,55 @@ def eliminar_transacciones_fecha(
             eliminadas += 1
     
     return {"message": f"Se eliminaron {eliminadas} transacciones de la fecha {fecha}"}
+
+# ============================================
+# WEBSOCKET PARA ACTUALIZACIONES EN TIEMPO REAL
+# ============================================
+
+@router.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    """
+    WebSocket para notificaciones en tiempo real de cambios en transacciones
+    Conecta clientes para recibir actualizaciones automáticas cuando se modifican datos
+    """
+    await websocket_manager.connect(websocket)
+    
+    try:
+        # Enviar mensaje de bienvenida
+        await websocket_manager.send_personal_message({
+            "type": "connection_established",
+            "message": "Conexión establecida exitosamente",
+            "timestamp": "datetime.now().isoformat()"
+        }, websocket)
+        
+        # Mantener la conexión activa escuchando mensajes del cliente
+        while True:
+            # Escuchar mensajes del cliente (aunque no los procesemos por ahora)
+            data = await websocket.receive_text()
+            
+            # Opcional: procesar comandos del cliente
+            try:
+                client_message = json.loads(data)
+                if client_message.get("type") == "ping":
+                    await websocket_manager.send_personal_message({
+                        "type": "pong",
+                        "message": "Conexión activa"
+                    }, websocket)
+            except json.JSONDecodeError:
+                logger.warning(f"Mensaje JSON inválido recibido: {data}")
+                
+    except WebSocketDisconnect:
+        logger.info("🔌 Cliente desconectado del WebSocket")
+        websocket_manager.disconnect(websocket)
+    except Exception as e:
+        logger.error(f"❌ Error en WebSocket: {e}")
+        websocket_manager.disconnect(websocket)
+
+@router.get("/ws/stats")
+async def get_websocket_stats():
+    """Obtener estadísticas de conexiones WebSocket activas"""
+    return {
+        "status": "WebSocket endpoint active",
+        "stats": websocket_manager.get_connection_stats(),
+        "endpoint": "/api/v1/api/transacciones-flujo-caja/ws"
+    }

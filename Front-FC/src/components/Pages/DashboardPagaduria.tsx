@@ -8,6 +8,7 @@ import { useTRM } from '../../hooks/useTRM';
 import { useConceptosFlujoCaja, ConceptoFlujoCaja } from '../../hooks/useConceptosFlujoCaja';
 import { useTransaccionesFlujoCaja } from '../../hooks/useTransaccionesFlujoCaja';
 import { useDiferenciaSaldos } from '../../hooks/useDiferenciaSaldos';
+import { useDashboardWebSocket } from '../../hooks/useWebSocket';
 import { CeldaEditable } from '../UI/CeldaEditable';
 
 interface Concepto {
@@ -55,6 +56,7 @@ const DashboardPagaduria: React.FC = () => {
     transacciones, 
     loading: transaccionesLoading, 
     error: transaccionesError,
+    cargarTransacciones,
     guardarTransaccion,
     obtenerMonto,
     setError: setTransaccionesError
@@ -66,6 +68,9 @@ const DashboardPagaduria: React.FC = () => {
     verificarNecesidadCalculo,
     loading: diferenciaSaldosLoading 
   } = useDiferenciaSaldos();
+
+  // Hook para WebSocket - actualizaciones en tiempo real
+  useDashboardWebSocket('pagaduria', cargarTransacciones);
 
   // Función para convertir conceptos del backend al formato del frontend
   const convertirConceptosParaTabla = (conceptosBackend: ConceptoFlujoCaja[]): Concepto[] => {

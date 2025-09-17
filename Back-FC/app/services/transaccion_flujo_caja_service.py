@@ -34,6 +34,49 @@ class TransaccionFlujoCajaService:
         self.db = db
         self.dependencias_service = DependenciasFlujoCajaService(db)
     
+    def _aplicar_signo_por_tipo_concepto(self, monto: float, concepto_id: int) -> float:
+        """
+        Aplica el signo correcto al monto según el CODIGO del concepto:
+        - I (INGRESO): Siempre positivo 
+        - E (EGRESO): Siempre negativo
+        - N (NEUTRAL): Mantiene el signo que ingrese el usuario
+        """
+        try:
+            # Obtener el concepto y su código
+            concepto = self.db.query(ConceptoFlujoCaja).filter(
+                ConceptoFlujoCaja.id == concepto_id
+            ).first()
+            
+            if not concepto:
+                logger.warning(f"⚠️ Concepto ID {concepto_id} no encontrado, manteniendo monto original: {monto}")
+                return monto
+            
+            codigo = concepto.codigo or ""
+            monto_absoluto = abs(monto)
+            
+            if codigo == "I":
+                # INGRESO: Siempre positivo
+                resultado = monto_absoluto
+                if monto < 0:
+                    logger.info(f"💰 INGRESO: Convertido de {monto} a {resultado} (concepto: {concepto.nombre})")
+                return resultado
+                
+            elif codigo == "E":
+                # EGRESO: Siempre negativo  
+                resultado = -monto_absoluto
+                if monto > 0:
+                    logger.info(f"💸 EGRESO: Convertido de {monto} a {resultado} (concepto: {concepto.nombre})")
+                return resultado
+                
+            else:  # codigo == "N" o cualquier otro
+                # NEUTRAL: Mantiene el signo del usuario
+                logger.info(f"⚖️ NEUTRAL: Mantenido {monto} (concepto: {concepto.nombre}, código: {codigo})")
+                return monto
+                
+        except Exception as e:
+            logger.error(f"❌ Error aplicando signo por tipo concepto: {e}")
+            return monto  # En caso de error, mantener el monto original
+    
     def crear_transaccion(self, transaccion_data: TransaccionFlujoCajaCreate, usuario_id: int) -> TransaccionFlujoCaja:
         """Crear una nueva transacción de flujo de caja"""
         
@@ -62,9 +105,17 @@ class TransaccionFlujoCajaService:
         if transaccion_existente:
             raise ValueError("Ya existe una transacción para esta fecha, concepto y cuenta")
         
+        # 🔥 APLICAR SIGNO CORRECTO según el tipo de concepto
+        monto_original = transaccion_data.monto
+        monto_corregido = self._aplicar_signo_por_tipo_concepto(monto_original, transaccion_data.concepto_id)
+        
+        # Crear data corregida
+        transaccion_data_corregida = transaccion_data.dict()
+        transaccion_data_corregida['monto'] = monto_corregido
+        
         # Crear la transacción
         db_transaccion = TransaccionFlujoCaja(
-            **transaccion_data.dict(),
+            **transaccion_data_corregida,
             usuario_id=usuario_id,
             auditoria={
                 "accion": "creacion",
@@ -122,6 +173,13 @@ class TransaccionFlujoCajaService:
         
         # Actualizar campos
         update_data = transaccion_data.model_dump(exclude_unset=True)
+        
+        # 🔥 APLICAR SIGNO CORRECTO si se está actualizando el monto
+        if 'monto' in update_data:
+            monto_original = update_data['monto']
+            monto_corregido = self._aplicar_signo_por_tipo_concepto(monto_original, db_transaccion.concepto_id)
+            update_data['monto'] = monto_corregido
+        
         for field, value in update_data.items():
             setattr(db_transaccion, field, value)
         

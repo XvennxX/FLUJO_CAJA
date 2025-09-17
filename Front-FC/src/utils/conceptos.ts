@@ -12,7 +12,7 @@ export const esConceptoAutoCalculado = (conceptoId: number | undefined): boolean
   
   // Lista de conceptos que se auto-calculan y no deben ser editables manualmente
   const conceptosAutoCalculados = [
-    3,  // VENTANILLA
+    2,  // CONSUMO (auto-calculado desde SUBTOTAL MOVIMIENTO PAGADURIA)
     52, // DIFERENCIA SALDOS
     54, // SALDO DIA ANTERIOR
     82, // SUBTOTAL MOVIMIENTO PAGADURIA

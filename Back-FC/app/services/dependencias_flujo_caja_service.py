@@ -186,13 +186,13 @@ class DependenciasFlujoCajaService:
             
             # NUEVA CROSS-DEPENDENCY: VENTANILLA = SUBTOTAL MOVIMIENTO PAGADURIA
             logger.info("🏪 Procesando cross-dependency: VENTANILLA...")
-            ventanilla_updates = self._procesar_ventanilla_automatico(
+            consumo_updates = self._procesar_ventanilla_automatico(
                 fecha=fecha,
                 cuenta_id=cuenta_id,
                 compania_id=compania_id,
                 usuario_id=usuario_id
             )
-            actualizaciones.extend(ventanilla_updates)
+            actualizaciones.extend(consumo_updates)
             
             return actualizaciones
             
@@ -607,7 +607,7 @@ class DependenciasFlujoCajaService:
         usuario_id: Optional[int] = None
     ) -> List[Dict]:
         """
-        Procesa automáticamente VENTANILLA (ID 3) del día actual
+        Procesa automáticamente CONSUMO (ID 2) del día actual
         basándose en SUBTOTAL MOVIMIENTO PAGADURIA (ID 82) del mismo día.
         """
         try:
@@ -619,10 +619,10 @@ class DependenciasFlujoCajaService:
             else:
                 cuentas_ids = [1, 2, 3, 4]  # IDs de cuentas existentes
             
-            logger.info(f"🏪 Procesando VENTANILLA automático para fecha {fecha}")
+            logger.info(f"�️ Procesando CONSUMO automático para fecha {fecha}")
             
             for cuenta in cuentas_ids:
-                logger.info(f"📊 Procesando VENTANILLA para cuenta {cuenta}...")
+                logger.info(f"📊 Procesando CONSUMO para cuenta {cuenta}...")
                 
                 # Buscar SUBTOTAL MOVIMIENTO PAGADURIA (ID 82) del mismo día
                 subtotal_movimiento = self.db.query(TransaccionFlujoCaja).filter(
@@ -637,22 +637,22 @@ class DependenciasFlujoCajaService:
                     
                     logger.info(f"💰 Cuenta {cuenta}: SUBTOTAL MOVIMIENTO PAGADURIA = ${monto_subtotal}")
                     
-                    # Verificar si ya existe VENTANILLA (ID 3) para este día
-                    ventanilla_existente = self.db.query(TransaccionFlujoCaja).filter(
+                    # Verificar si ya existe CONSUMO (ID 2) para este día
+                    consumo_existente = self.db.query(TransaccionFlujoCaja).filter(
                         TransaccionFlujoCaja.fecha == fecha,
-                        TransaccionFlujoCaja.concepto_id == 3,  # VENTANILLA
+                        TransaccionFlujoCaja.concepto_id == 2,  # CONSUMO
                         TransaccionFlujoCaja.cuenta_id == cuenta,
                         TransaccionFlujoCaja.area == AreaTransaccion.tesoreria
                     ).first()
                     
-                    if ventanilla_existente:
+                    if consumo_existente:
                         # Actualizar existente
-                        monto_anterior = ventanilla_existente.monto
-                        ventanilla_existente.monto = monto_subtotal
-                        ventanilla_existente.descripcion = "Auto-calculado: igual a SUBTOTAL MOVIMIENTO PAGADURIA"
+                        monto_anterior = consumo_existente.monto
+                        consumo_existente.monto = monto_subtotal
+                        consumo_existente.descripcion = "Auto-calculado: igual a SUBTOTAL MOVIMIENTO PAGADURIA"
                         
                         # Actualizar auditoría
-                        auditoria_actual = ventanilla_existente.auditoria or {}
+                        auditoria_actual = consumo_existente.auditoria or {}
                         auditoria_actual.update({
                             "accion": "actualizacion_automatica",
                             "usuario_id": usuario_id or 1,
@@ -666,23 +666,23 @@ class DependenciasFlujoCajaService:
                                     "fecha_origen": fecha.isoformat(),
                                     "monto_origen": float(monto_subtotal)
                                 },
-                                "formula": "VENTANILLA = SUBTOTAL MOVIMIENTO PAGADURIA"
+                                "formula": "CONSUMO = SUBTOTAL MOVIMIENTO PAGADURIA"
                             },
-                            "tipo": "ventanilla_automatico"
+                            "tipo": "consumo_automatico"
                         })
-                        ventanilla_existente.auditoria = auditoria_actual
+                        consumo_existente.auditoria = auditoria_actual
                         
-                        logger.info(f"✅ VENTANILLA actualizado: Cuenta {cuenta}, ${monto_anterior} → ${monto_subtotal}")
+                        logger.info(f"✅ CONSUMO actualizado: Cuenta {cuenta}, ${monto_anterior} → ${monto_subtotal}")
                     else:
                         # Crear nueva transacción
-                        nueva_transaccion_ventanilla = TransaccionFlujoCaja(
+                        nueva_transaccion_consumo = TransaccionFlujoCaja(
                             fecha=fecha,
-                            concepto_id=3,  # VENTANILLA
+                            concepto_id=2,  # CONSUMO
                             cuenta_id=cuenta,
                             monto=monto_subtotal,
                             descripcion="Auto-calculado: igual a SUBTOTAL MOVIMIENTO PAGADURIA",
                             usuario_id=usuario_id or 1,
-                            area=AreaTransaccion.tesoreria,  # VENTANILLA está en área tesorería
+                            area=AreaTransaccion.tesoreria,  # CONSUMO está en área tesorería
                             compania_id=compania_id or 1,
                             auditoria={
                                 "accion": "creacion_automatica",
@@ -694,18 +694,18 @@ class DependenciasFlujoCajaService:
                                     "fecha_origen": fecha.isoformat(),
                                     "monto_origen": float(monto_subtotal)
                                 },
-                                "formula": "VENTANILLA = SUBTOTAL MOVIMIENTO PAGADURIA",
+                                "formula": "CONSUMO = SUBTOTAL MOVIMIENTO PAGADURIA",
                                 "monto_calculado": float(monto_subtotal),
-                                "tipo": "ventanilla_automatico"
+                                "tipo": "consumo_automatico"
                             }
                         )
                         
-                        self.db.add(nueva_transaccion_ventanilla)
-                        logger.info(f"✅ VENTANILLA creado: Cuenta {cuenta}, ${monto_subtotal}")
+                        self.db.add(nueva_transaccion_consumo)
+                        logger.info(f"✅ CONSUMO creado: Cuenta {cuenta}, ${monto_subtotal}")
                     
                     actualizaciones.append({
-                        "concepto_id": 3,
-                        "concepto_nombre": "VENTANILLA",
+                        "concepto_id": 2,
+                        "concepto_nombre": "CONSUMO",
                         "monto_nuevo": monto_subtotal,
                         "fecha": fecha,
                         "area": AreaTransaccionSchema.tesoreria,
@@ -771,58 +771,58 @@ class DependenciasFlujoCajaService:
                     TransaccionFlujoCaja.area == AreaTransaccion.pagaduria
                 ).first()
                 
-                if saldos_bancos or saldo_anterior:
-                    # Calcular DIFERENCIA SALDOS (suma de 53 + 54)
-                    monto_saldos_bancos = saldos_bancos.monto if saldos_bancos else Decimal('0.00')
-                    monto_saldo_anterior = saldo_anterior.monto if saldo_anterior else Decimal('0.00')
+                # SIEMPRE calcular DIFERENCIA SALDOS = SALDOS EN BANCOS - SALDO DIA ANTERIOR
+                # (incluso si uno o ambos valores no existen, se tratan como 0)
+                monto_saldos_bancos = saldos_bancos.monto if saldos_bancos else Decimal('0.00')
+                monto_saldo_anterior = saldo_anterior.monto if saldo_anterior else Decimal('0.00')
+                
+                diferencia_saldos = monto_saldos_bancos - monto_saldo_anterior
+                
+                logger.info(f"📊 Cuenta {cuenta}: SALDOS BANCOS=${monto_saldos_bancos} - SALDO ANTERIOR=${monto_saldo_anterior} = DIFERENCIA=${diferencia_saldos}")
+                
+                # Crear o actualizar DIFERENCIA SALDOS (ID 52)
+                transaccion_diferencia = self.db.query(TransaccionFlujoCaja).filter(
+                    TransaccionFlujoCaja.fecha == fecha,
+                    TransaccionFlujoCaja.concepto_id == 52,  # DIFERENCIA SALDOS
+                    TransaccionFlujoCaja.cuenta_id == cuenta,
+                    TransaccionFlujoCaja.area == AreaTransaccion.pagaduria
+                ).first()
+                
+                if transaccion_diferencia:
+                    # Actualizar existente
+                    monto_anterior = transaccion_diferencia.monto
+                    transaccion_diferencia.monto = diferencia_saldos
+                    transaccion_diferencia.descripcion = "Auto-calculado: SALDOS BANCOS - SALDO ANTERIOR"
                     
-                    diferencia_saldos = monto_saldos_bancos + monto_saldo_anterior
+                    logger.info(f"✅ DIFERENCIA SALDOS actualizada: Cuenta {cuenta}, ${monto_anterior} → ${diferencia_saldos}")
+                else:
+                    # Crear nueva
+                    nueva_transaccion = TransaccionFlujoCaja(
+                        fecha=fecha,
+                        concepto_id=52,  # DIFERENCIA SALDOS
+                        cuenta_id=cuenta,
+                        monto=diferencia_saldos,
+                        descripcion="Auto-calculado: SALDOS BANCOS - SALDO ANTERIOR",
+                        usuario_id=usuario_id or 1,
+                        area=AreaTransaccion.pagaduria,
+                        compania_id=compania_id or 1,
+                        auditoria={
+                            "accion": "creacion_automatica",
+                            "usuario_id": usuario_id or 1,
+                            "timestamp": datetime.now().isoformat(),
+                            "formula": "RESTA(53,54)",
+                            "componentes": {
+                                "saldos_bancos_id53": float(monto_saldos_bancos),
+                                "saldo_anterior_id54": float(monto_saldo_anterior)
+                            },
+                            "tipo": "dependencia_pagaduria"
+                        }
+                    )
                     
-                    logger.info(f"📊 Cuenta {cuenta}: SALDOS BANCOS=${monto_saldos_bancos} + SALDO ANTERIOR=${monto_saldo_anterior} = DIFERENCIA=${diferencia_saldos}")
-                    
-                    # Crear o actualizar DIFERENCIA SALDOS (ID 52)
-                    transaccion_diferencia = self.db.query(TransaccionFlujoCaja).filter(
-                        TransaccionFlujoCaja.fecha == fecha,
-                        TransaccionFlujoCaja.concepto_id == 52,  # DIFERENCIA SALDOS
-                        TransaccionFlujoCaja.cuenta_id == cuenta,
-                        TransaccionFlujoCaja.area == AreaTransaccion.pagaduria
-                    ).first()
-                    
-                    if transaccion_diferencia:
-                        # Actualizar existente
-                        monto_anterior = transaccion_diferencia.monto
-                        transaccion_diferencia.monto = diferencia_saldos
-                        transaccion_diferencia.descripcion = "Auto-calculado: SALDOS BANCOS + SALDO ANTERIOR"
-                        
-                        logger.info(f"✅ DIFERENCIA SALDOS actualizada: Cuenta {cuenta}, ${monto_anterior} → ${diferencia_saldos}")
-                    else:
-                        # Crear nueva
-                        nueva_transaccion = TransaccionFlujoCaja(
-                            fecha=fecha,
-                            concepto_id=52,  # DIFERENCIA SALDOS
-                            cuenta_id=cuenta,
-                            monto=diferencia_saldos,
-                            descripcion="Auto-calculado: SALDOS BANCOS + SALDO ANTERIOR",
-                            usuario_id=usuario_id or 1,
-                            area=AreaTransaccion.pagaduria,
-                            compania_id=compania_id or 1,
-                            auditoria={
-                                "accion": "creacion_automatica",
-                                "usuario_id": usuario_id or 1,
-                                "timestamp": datetime.now().isoformat(),
-                                "formula": "SUMA(53,54)",
-                                "componentes": {
-                                    "saldos_bancos_id53": float(monto_saldos_bancos),
-                                    "saldo_anterior_id54": float(monto_saldo_anterior)
-                                },
-                                "tipo": "dependencia_pagaduria"
-                            }
-                        )
-                        
-                        self.db.add(nueva_transaccion)
-                        logger.info(f"✅ DIFERENCIA SALDOS creada: Cuenta {cuenta}, ${diferencia_saldos}")
-                    
-                    actualizaciones.append({
+                    self.db.add(nueva_transaccion)
+                    logger.info(f"✅ DIFERENCIA SALDOS creada: Cuenta {cuenta}, ${diferencia_saldos}")
+                
+                actualizaciones.append({
                         "concepto_id": 52,
                         "concepto_nombre": "DIFERENCIA SALDOS",
                         "monto_nuevo": diferencia_saldos,
@@ -1342,6 +1342,56 @@ class DependenciasFlujoCajaService:
                         saldo_total_existente.auditoria = auditoria_actual
                         
                         logger.info(f"✅ SALDO TOTAL EN BANCOS actualizado: Cuenta {cuenta}, ${monto_anterior} → ${saldo_total_bancos}")
+                        
+                        # 🚀 LÓGICA PROACTIVA: Proyectar SALDO TOTAL EN BANCOS actualizado → SALDO DÍA ANTERIOR del día siguiente
+                        try:
+                            fecha_siguiente = fecha + timedelta(days=1)
+                            
+                            # Verificar si ya existe SALDO DÍA ANTERIOR para el día siguiente
+                            saldo_dia_siguiente = self.db.query(TransaccionFlujoCaja).filter(
+                                TransaccionFlujoCaja.fecha == fecha_siguiente,
+                                TransaccionFlujoCaja.concepto_id == 54,  # SALDO DÍA ANTERIOR
+                                TransaccionFlujoCaja.cuenta_id == cuenta,
+                                TransaccionFlujoCaja.area == AreaTransaccion.pagaduria
+                            ).first()
+                            
+                            if saldo_dia_siguiente:
+                                # Actualizar proyección existente
+                                monto_anterior_proyectado = saldo_dia_siguiente.monto
+                                saldo_dia_siguiente.monto = saldo_total_bancos
+                                saldo_dia_siguiente.descripcion = f"Auto-calculado: SALDO TOTAL BANCOS del {fecha}"
+                                
+                                logger.info(f"🔄 PROYECCIÓN ACTUALIZADA: SALDO DÍA ANTERIOR del {fecha_siguiente}: ${monto_anterior_proyectado} → ${saldo_total_bancos}")
+                            else:
+                                # Crear nueva proyección
+                                nueva_proyeccion = TransaccionFlujoCaja(
+                                    fecha=fecha_siguiente,
+                                    concepto_id=54,  # SALDO DÍA ANTERIOR
+                                    cuenta_id=cuenta,
+                                    monto=saldo_total_bancos,
+                                    descripcion=f"Auto-calculado: SALDO TOTAL BANCOS del {fecha}",
+                                    usuario_id=usuario_id or 1,
+                                    area=AreaTransaccion.pagaduria,
+                                    compania_id=compania_id or 1,
+                                    auditoria={
+                                        "accion": "proyeccion_automatica_update",
+                                        "usuario_id": usuario_id or 1,
+                                        "timestamp": datetime.now().isoformat(),
+                                        "origen": {
+                                            "concepto_origen_id": 85,
+                                            "concepto_origen_nombre": "SALDO TOTAL EN BANCOS",
+                                            "fecha_origen": fecha.isoformat(),
+                                            "monto_origen": float(saldo_total_bancos)
+                                        },
+                                        "tipo": "proyeccion_saldo_dia_anterior_update"
+                                    }
+                                )
+                                
+                                self.db.add(nueva_proyeccion)
+                                logger.info(f"🚀 PROYECCIÓN CREADA: SALDO DÍA ANTERIOR para {fecha_siguiente}: ${saldo_total_bancos}")
+                        except Exception as e:
+                            logger.warning(f"⚠️ Error en proyección al actualizar SALDO TOTAL EN BANCOS: {e}")
+                        
                         monto_anterior = saldo_total_existente.monto
                         saldo_total_existente.monto = saldo_total_bancos
                         saldo_total_existente.descripcion = "Auto-calculado: SUBTOTAL SALDO INICIAL + MOVIMIENTO TESORERIA"
@@ -1394,6 +1444,55 @@ class DependenciasFlujoCajaService:
                         self.db.add(nueva_transaccion_saldo_total)
                         logger.info(f"✅ SALDO TOTAL EN BANCOS creado: Cuenta {cuenta}, ${saldo_total_bancos}")
                     
+                    # 🚀 LÓGICA PROACTIVA: Proyectar SALDO TOTAL EN BANCOS del día actual → SALDO DÍA ANTERIOR del día siguiente
+                    try:
+                        fecha_siguiente = fecha + timedelta(days=1)
+                        
+                        # Verificar si ya existe SALDO DÍA ANTERIOR para el día siguiente
+                        saldo_dia_siguiente = self.db.query(TransaccionFlujoCaja).filter(
+                            TransaccionFlujoCaja.fecha == fecha_siguiente,
+                            TransaccionFlujoCaja.concepto_id == 54,  # SALDO DÍA ANTERIOR
+                            TransaccionFlujoCaja.cuenta_id == cuenta,
+                            TransaccionFlujoCaja.area == AreaTransaccion.pagaduria
+                        ).first()
+                        
+                        if saldo_dia_siguiente:
+                            # Actualizar existente
+                            monto_anterior_proyectado = saldo_dia_siguiente.monto
+                            saldo_dia_siguiente.monto = saldo_total_bancos
+                            saldo_dia_siguiente.descripcion = f"Auto-calculado: SALDO TOTAL BANCOS del {fecha}"
+                            
+                            logger.info(f"🔄 PROYECCIÓN: SALDO DÍA ANTERIOR del {fecha_siguiente} actualizado: ${monto_anterior_proyectado} → ${saldo_total_bancos}")
+                        else:
+                            # Crear nueva proyección para el día siguiente
+                            nueva_proyeccion = TransaccionFlujoCaja(
+                                fecha=fecha_siguiente,
+                                concepto_id=54,  # SALDO DÍA ANTERIOR
+                                cuenta_id=cuenta,
+                                monto=saldo_total_bancos,
+                                descripcion=f"Auto-calculado: SALDO TOTAL BANCOS del {fecha}",
+                                usuario_id=usuario_id or 1,
+                                area=AreaTransaccion.pagaduria,
+                                compania_id=compania_id or 1,
+                                auditoria={
+                                    "accion": "proyeccion_automatica",
+                                    "usuario_id": usuario_id or 1,
+                                    "timestamp": datetime.now().isoformat(),
+                                    "origen": {
+                                        "concepto_origen_id": 85,
+                                        "concepto_origen_nombre": "SALDO TOTAL EN BANCOS",
+                                        "fecha_origen": fecha.isoformat(),
+                                        "monto_origen": float(saldo_total_bancos)
+                                    },
+                                    "tipo": "proyeccion_saldo_dia_anterior"
+                                }
+                            )
+                            
+                            self.db.add(nueva_proyeccion)
+                            logger.info(f"🚀 PROYECCIÓN: SALDO DÍA ANTERIOR creado para {fecha_siguiente}: ${saldo_total_bancos}")
+                    except Exception as e:
+                        logger.warning(f"⚠️ Error en proyección SALDO DÍA ANTERIOR: {e}")
+                    
                     actualizaciones.append({
                         "concepto_id": 85,
                         "concepto_nombre": "SALDO TOTAL EN BANCOS",
@@ -1428,26 +1527,26 @@ class DependenciasFlujoCajaService:
                 )
                 
                 if subtotal_movimiento_actualizado:
-                    logger.info("🏪 TRIGGER: SUBTOTAL MOVIMIENTO actualizado → Sincronizando VENTANILLA...")
+                    logger.info("�️ TRIGGER: SUBTOTAL MOVIMIENTO actualizado → Sincronizando CONSUMO...")
                     try:
-                        ventanilla_updates = self._procesar_ventanilla_automatico(
+                        consumo_updates = self._procesar_ventanilla_automatico(
                             fecha=fecha,
                             cuenta_id=cuenta_id,  # Usar el cuenta_id específico si se proporcionó
                             compania_id=compania_id,
                             usuario_id=usuario_id
                         )
                         
-                        if ventanilla_updates:
-                            logger.info(f"✅ VENTANILLA sincronizado automáticamente: {len(ventanilla_updates)} actualizaciones")
-                            # Agregar las actualizaciones de VENTANILLA a la respuesta
-                            for ventanilla_update in ventanilla_updates:
-                                ventanilla_update["tipo_trigger"] = "auto_sync_from_subtotal_movimiento"
-                            actualizaciones.extend(ventanilla_updates)
+                        if consumo_updates:
+                            logger.info(f"✅ CONSUMO sincronizado automáticamente: {len(consumo_updates)} actualizaciones")
+                            # Agregar las actualizaciones de CONSUMO a la respuesta
+                            for consumo_update in consumo_updates:
+                                consumo_update["tipo_trigger"] = "auto_sync_from_subtotal_movimiento"
+                            actualizaciones.extend(consumo_updates)
                         else:
-                            logger.info("ℹ️ VENTANILLA: No requiere actualización")
+                            logger.info("ℹ️ CONSUMO: No requiere actualización")
                             
                     except Exception as e:
-                        logger.error(f"❌ Error sincronizando VENTANILLA automáticamente: {e}")
+                        logger.error(f"❌ Error sincronizando CONSUMO automáticamente: {e}")
             
             return actualizaciones
             

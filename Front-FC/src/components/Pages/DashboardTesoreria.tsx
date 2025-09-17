@@ -4,9 +4,11 @@ import { useAuth } from '../../contexts/AuthContext';
 import { formatCurrency } from '../../utils/formatters';
 import { useConceptosFlujoCaja, ConceptoFlujoCaja } from '../../hooks/useConceptosFlujoCaja';
 import { useTransaccionesFlujoCaja, TransaccionFlujoCaja } from '../../hooks/useTransaccionesFlujoCaja';
+import { useDashboardWebSocket } from '../../hooks/useWebSocket';
 import { CeldaEditable } from '../UI/CeldaEditable';
 import { ErrorBoundary } from '../UI/ErrorBoundary';
 import { SaldoInicialService } from '../../services/saldoInicialService';
+import { isConceptoAutoCalculado } from '../../utils/conceptos';
 
 interface Concepto {
   categoria: string;
@@ -68,8 +70,19 @@ const DashboardTesoreria: React.FC = () => {
     error: transaccionesError,
     guardarTransaccion,
     obtenerMonto,
+    cargarTransacciones,
     setError: setTransaccionesError
   } = useTransaccionesFlujoCaja(selectedDate, 'tesoreria');
+  
+  // 🔄 WebSocket para actualizaciones en tiempo real
+  const { 
+    isConnected: wsConnected, 
+    updateCount, 
+    lastUpdateTime 
+  } = useDashboardWebSocket('tesoreria', () => {
+    console.log('🔄 [TESORERÍA] Recargando datos por WebSocket...');
+    cargarTransacciones();
+  });
   
   // Cargar todas las cuentas bancarias al inicializar el componente
   useEffect(() => {
@@ -1021,7 +1034,7 @@ const DashboardTesoreria: React.FC = () => {
                             cuentaId={account.id}
                             companiaId={account.compania.id}
                             onGuardar={guardarTransaccionConSignos}
-                            disabled={!concepto.id || transaccionesLoading}
+                            disabled={!concepto.id || transaccionesLoading || isConceptoAutoCalculado(concepto.id)}
                           />
                         </td>
                       );
