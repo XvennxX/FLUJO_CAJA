@@ -1,16 +1,19 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, Calendar } from 'lucide-react';
+import { useCalendarioHabiles } from '../../hooks/useDiasHabiles';
 
 interface DatePickerProps {
   selectedDate: string;
   onDateChange: (date: string) => void;
   availableDates?: string[];
+  onlyBusinessDays?: boolean;
 }
 
 const DatePicker: React.FC<DatePickerProps> = ({ 
   selectedDate, 
   onDateChange, 
-  availableDates = [] 
+  availableDates = [],
+  onlyBusinessDays = false
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [currentMonth, setCurrentMonth] = useState(() => {
@@ -20,6 +23,31 @@ const DatePicker: React.FC<DatePickerProps> = ({
     const month = parseInt(dateParts[1]) - 1; // Mes base 0
     return new Date(year, month, 1);
   });
+
+  // Hook para días hábiles
+  const { 
+    esFechaHabilitada, 
+    loading: loadingDiasHabiles, 
+    error: errorDiasHabiles,
+    diasHabiles 
+  } = useCalendarioHabiles(
+    currentMonth.getFullYear(), 
+    currentMonth.getMonth() + 1
+  );
+
+  // Debug log
+  useEffect(() => {
+    if (onlyBusinessDays) {
+      console.log('DatePicker Debug:', {
+        year: currentMonth.getFullYear(),
+        month: currentMonth.getMonth() + 1,
+        loadingDiasHabiles,
+        errorDiasHabiles,
+        diasHabilesCount: diasHabiles?.length || 0,
+        diasHabilesSample: diasHabiles?.slice(0, 5) || []
+      });
+    }
+  }, [currentMonth, loadingDiasHabiles, errorDiasHabiles, diasHabiles, onlyBusinessDays]);
 
   const monthNames = [
     'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -46,7 +74,9 @@ const DatePicker: React.FC<DatePickerProps> = ({
         isCurrentMonth: false,
         isToday: false,
         isSelected: false,
-        hasData: false
+        hasData: false,
+        isBusinessDay: false,
+        isClickable: false
       });
     }
 
@@ -55,13 +85,25 @@ const DatePicker: React.FC<DatePickerProps> = ({
       const currentDate = new Date(year, month, day);
       const dateString = formatDateToString(currentDate);
       const today = new Date();
+      const isBusinessDay = onlyBusinessDays ? esFechaHabilitada(currentDate) : true;
+      
+      // Debug log para fechas específicas
+      if (onlyBusinessDays && day <= 5) {
+        console.log(`Debug day ${day}:`, {
+          date: dateString,
+          isBusinessDay,
+          currentDate: currentDate.toDateString()
+        });
+      }
       
       days.push({
         date: currentDate,
         isCurrentMonth: true,
         isToday: currentDate.toDateString() === today.toDateString(),
         isSelected: dateString === selectedDate,
-        hasData: availableDates.includes(dateString)
+        hasData: availableDates.includes(dateString),
+        isBusinessDay: isBusinessDay,
+        isClickable: isBusinessDay || !onlyBusinessDays
       });
     }
 
@@ -74,7 +116,9 @@ const DatePicker: React.FC<DatePickerProps> = ({
         isCurrentMonth: false,
         isToday: false,
         isSelected: false,
-        hasData: false
+        hasData: false,
+        isBusinessDay: false,
+        isClickable: false
       });
     }
 
@@ -227,7 +271,8 @@ const DatePicker: React.FC<DatePickerProps> = ({
           {/* Calendar grid */}
           <div className="grid grid-cols-7 gap-1">
             {days.map((day, index) => {
-              const isClickable = day.isCurrentMonth;
+              const isClickable = day.isCurrentMonth && day.isClickable;
+              const isNonBusinessDay = onlyBusinessDays && day.isCurrentMonth && !day.isBusinessDay;
               
               return (
                 <button
@@ -238,21 +283,33 @@ const DatePicker: React.FC<DatePickerProps> = ({
                     relative p-2 text-sm rounded transition-colors
                     ${!day.isCurrentMonth 
                       ? 'text-gray-300 cursor-not-allowed' 
-                      : 'text-gray-700 hover:bg-gray-100 dark:bg-gray-700'
+                      : isNonBusinessDay
+                        ? 'text-gray-400 cursor-not-allowed bg-gray-50 dark:bg-gray-900'
+                        : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700'
                     }
                     ${day.isSelected 
                       ? 'bg-bolivar-500 text-white hover:bg-bolivar-600' 
                       : ''
                     }
                     ${day.isToday && !day.isSelected 
-                      ? 'bg-bolivar-100 text-bolivar-700 font-semibold' 
+                      ? 'bg-bolivar-100 text-bolivar-700 font-semibold dark:bg-bolivar-900 dark:text-bolivar-300' 
                       : ''
                     }
                   `}
+                  title={
+                    isNonBusinessDay 
+                      ? 'Día no hábil (fin de semana o festivo)' 
+                      : day.isCurrentMonth 
+                        ? 'Seleccionar fecha' 
+                        : 'Día fuera del mes actual'
+                  }
                 >
                   {day.date.getDate()}
                   {day.hasData && (
                     <div className="absolute bottom-1 left-1/2 transform -translate-x-1/2 w-1 h-1 bg-gold-500 rounded-full"></div>
+                  )}
+                  {isNonBusinessDay && (
+                    <div className="absolute top-1 right-1 w-1 h-1 bg-red-400 rounded-full" title="No hábil"></div>
                   )}
                 </button>
               );
@@ -261,7 +318,7 @@ const DatePicker: React.FC<DatePickerProps> = ({
 
           {/* Legend */}
           <div className="mt-4 pt-3 border-t border-gray-200 dark:border-gray-700">
-            <div className="flex items-center justify-center space-x-4 text-xs text-gray-600 dark:text-gray-400">
+            <div className="flex items-center justify-center space-x-3 text-xs text-gray-600 dark:text-gray-400 flex-wrap gap-y-2">
               <div className="flex items-center space-x-1">
                 <div className="w-2 h-2 bg-bolivar-500 rounded-full"></div>
                 <span>Seleccionado</span>
@@ -274,7 +331,18 @@ const DatePicker: React.FC<DatePickerProps> = ({
                 <div className="w-2 h-2 bg-bolivar-100 rounded-full"></div>
                 <span>Hoy</span>
               </div>
+              {onlyBusinessDays && (
+                <div className="flex items-center space-x-1">
+                  <div className="w-2 h-2 bg-red-400 rounded-full"></div>
+                  <span>No hábil</span>
+                </div>
+              )}
             </div>
+            {onlyBusinessDays && (
+              <div className="text-center text-xs text-gray-500 dark:text-gray-400 mt-2">
+                Solo días hábiles disponibles
+              </div>
+            )}
           </div>
         </div>
       )}

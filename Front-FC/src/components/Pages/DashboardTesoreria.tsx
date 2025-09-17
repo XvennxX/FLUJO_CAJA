@@ -8,6 +8,8 @@ import { useDashboardWebSocket } from '../../hooks/useWebSocket';
 import { CeldaEditable } from '../UI/CeldaEditable';
 import { ErrorBoundary } from '../UI/ErrorBoundary';
 import { SaldoInicialService } from '../../services/saldoInicialService';
+import DatePicker from '../Calendar/DatePicker';
+import DiasHabilesTest from '../DiasHabilesTest';
 import { isConceptoAutoCalculado } from '../../utils/conceptos';
 
 interface Concepto {
@@ -344,7 +346,21 @@ const DashboardTesoreria: React.FC = () => {
       
       // Manejar casos especiales de conceptos calculados
       if (concepto.nombre === 'SALDO INICIAL') {
-        // Para SALDO INICIAL, usar la suma del SALDO FINAL CUENTAS del día anterior para todas las cuentas
+        // Primero verificar si hay transacciones reales para SALDO INICIAL
+        if (concepto.id && bankAccounts.length > 0) {
+          total = bankAccounts.reduce((sum, account) => {
+            const valorCuenta = obtenerMontoConSignos(concepto.id!, account.id);
+            const valorValido = isFinite(valorCuenta) ? valorCuenta : 0;
+            return sum + valorValido;
+          }, 0);
+          
+          // Si hay valores reales, usarlos
+          if (total !== 0) {
+            return total;
+          }
+        }
+        
+        // Fallback: Si no hay transacciones reales, calcular desde día anterior
         total = calculateSaldoInicialDesdeDiaAnterior();
         return isFinite(total) ? total : 0;
       } else if (concepto.nombre === 'SALDO NETO INICIAL PAGADURÍA') {
@@ -680,8 +696,18 @@ const DashboardTesoreria: React.FC = () => {
         return 0;
       }
       
+      // Debug para SALDO INICIAL
+      if (conceptoId === 1) {
+        console.log('🔍 DEBUG SALDO INICIAL:', { conceptoId, cuentaId, selectedDate });
+      }
+      
       // Obtener el monto original
       const montoOriginal = obtenerMonto(conceptoId, cuentaId);
+      
+      // Debug para SALDO INICIAL
+      if (conceptoId === 1) {
+        console.log('📊 Monto obtenido:', montoOriginal);
+      }
       
       // Validar que el monto sea un número válido
       if (!isFinite(montoOriginal) || isNaN(montoOriginal)) {
@@ -779,20 +805,22 @@ const DashboardTesoreria: React.FC = () => {
     }
   };
 
+  // 🔥 AUTO-PROCESAMIENTO DESHABILITADO TEMPORALMENTE
+  // Interfiere con proyecciones de días hábiles
   // useEffect para procesar SALDOS INICIALES automáticamente
-  useEffect(() => {
-    // Solo ejecutar si ya tenemos datos cargados
-    if (!loading && bankAccounts.length > 0 && conceptos.length > 0) {
-      
-      // Ejecutar el procesamiento automático después de un pequeño delay
-      // para asegurar que todos los datos estén listos
-      const timer = setTimeout(() => {
-        procesarSaldosInicialesAutomatico();
-      }, 1000);
+  // useEffect(() => {
+  //   // Solo ejecutar si ya tenemos datos cargados
+  //   if (!loading && bankAccounts.length > 0 && conceptos.length > 0) {
+  //     
+  //     // Ejecutar el procesamiento automático después de un pequeño delay
+  //     // para asegurar que todos los datos estén listos
+  //     const timer = setTimeout(() => {
+  //       procesarSaldosInicialesAutomatico();
+  //     }, 1000);
 
-      return () => clearTimeout(timer);
-    }
-  }, [selectedDate, loading, bankAccounts.length, conceptos.length]); // Re-ejecutar cuando cambie la fecha o se carguen los datos
+  //     return () => clearTimeout(timer);
+  //   }
+  // }, [selectedDate, loading, bankAccounts.length, conceptos.length]); // Re-ejecutar cuando cambie la fecha o se carguen los datos
 
   if (loading) {
     return (
@@ -837,11 +865,11 @@ const DashboardTesoreria: React.FC = () => {
           {/* Selector de fecha específica para transacciones */}
           <div className="flex flex-col">
             <label className="text-xs text-gray-600 dark:text-gray-400 mb-1">Fecha específica:</label>
-            <input
-              type="date"
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              className="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-bolivar-500 focus:border-transparent"
+            <DatePicker 
+              selectedDate={selectedDate}
+              onDateChange={setSelectedDate}
+              availableDates={[]}
+              onlyBusinessDays={true}
             />
           </div>
 
@@ -1007,14 +1035,26 @@ const DashboardTesoreria: React.FC = () => {
                         </td>
                       );
                     } else if (esSaldoInicial) {
-                      // Para SALDO INICIAL, mostrar valor del SALDO FINAL CUENTAS del día anterior (no editable)
-                      const valorSaldoInicialDiaAnterior = safeNumericValue(calculateSaldoInicialDesdeDiaAnterior(account.id));
+                      // Para SALDO INICIAL, primero buscar transacciones reales, luego fallback al día anterior
+                      let valorSaldoInicial = 0;
+                      
+                      // Primero intentar obtener valor real de transacciones
+                      if (concepto.id) {
+                        valorSaldoInicial = obtenerMontoConSignos(concepto.id, account.id);
+                      }
+                      
+                      // Si no hay valor real, calcular desde día anterior
+                      if (valorSaldoInicial === 0) {
+                        valorSaldoInicial = calculateSaldoInicialDesdeDiaAnterior(account.id);
+                      }
+                      
+                      const valorSaldoInicialFinal = safeNumericValue(valorSaldoInicial);
                       
                       return (
                         <td key={`data-${account.id}`} className="border border-gray-400 dark:border-gray-500 px-1 py-1 text-center text-xs bg-purple-50 dark:bg-purple-900/20">
-                          {valorSaldoInicialDiaAnterior !== 0 ? (
-                            <span className={`font-bold ${valorSaldoInicialDiaAnterior < 0 ? 'text-red-700 dark:text-red-400' : 'text-green-700 dark:text-green-400'}`}>
-                              {valorSaldoInicialDiaAnterior < 0 ? `(${formatCurrency(Math.abs(valorSaldoInicialDiaAnterior))})` : formatCurrency(valorSaldoInicialDiaAnterior)}
+                          {valorSaldoInicialFinal !== 0 ? (
+                            <span className={`font-bold ${valorSaldoInicialFinal < 0 ? 'text-red-700 dark:text-red-400' : 'text-green-700 dark:text-green-400'}`}>
+                              {valorSaldoInicialFinal < 0 ? `(${formatCurrency(Math.abs(valorSaldoInicialFinal))})` : formatCurrency(valorSaldoInicialFinal)}
                             </span>
                           ) : (
                             <span className="text-gray-400 dark:text-gray-500">—</span>

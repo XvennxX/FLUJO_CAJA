@@ -8,6 +8,7 @@ import { useTRM } from '../../hooks/useTRM';
 import { useConceptosFlujoCaja, ConceptoFlujoCaja } from '../../hooks/useConceptosFlujoCaja';
 import { useTransaccionesFlujoCaja } from '../../hooks/useTransaccionesFlujoCaja';
 import { useDiferenciaSaldos } from '../../hooks/useDiferenciaSaldos';
+import DatePicker from '../Calendar/DatePicker';
 import { useDashboardWebSocket } from '../../hooks/useWebSocket';
 import { CeldaEditable } from '../UI/CeldaEditable';
 
@@ -315,11 +316,11 @@ const DashboardPagaduria: React.FC = () => {
           {/* Selector de fecha específica para transacciones */}
           <div className="flex flex-col">
             <label className="text-xs text-gray-600 dark:text-gray-400 mb-1">Fecha específica:</label>
-            <input
-              type="date"
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              className="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-bolivar-500 focus:border-transparent"
+            <DatePicker 
+              selectedDate={selectedDate}
+              onDateChange={setSelectedDate}
+              availableDates={[]}
+              onlyBusinessDays={true}
             />
           </div>
 

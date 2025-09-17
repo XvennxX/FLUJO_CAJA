@@ -20,7 +20,7 @@ import AdminPanel from './components/Pages/AdminPanel';
 
 const AppContent: React.FC = () => {
   const { user, isLoading } = useAuth();
-  const [currentPage, setCurrentPage] = useState('panel');
+  const [currentPage, setCurrentPage] = useState('dashboard');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   if (isLoading) {

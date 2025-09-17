@@ -8,6 +8,7 @@ from .conceptos_flujo_caja import router as conceptos_flujo_caja_router
 from .transacciones_flujo_caja import router as transacciones_flujo_caja_router
 from .saldo_inicial import router as saldo_inicial_router
 from .diferencia_saldos import router as diferencia_saldos_router
+from .dias_habiles import router as dias_habiles_router
 
 api_router = APIRouter(prefix="/api/v1")
 
@@ -20,3 +21,4 @@ api_router.include_router(conceptos_flujo_caja_router)
 api_router.include_router(transacciones_flujo_caja_router)
 api_router.include_router(saldo_inicial_router, prefix="/saldo-inicial", tags=["Saldo Inicial"])
 api_router.include_router(diferencia_saldos_router, prefix="/diferencia-saldos", tags=["Diferencia Saldos"])
+api_router.include_router(dias_habiles_router, prefix="/dias-habiles", tags=["Días Hábiles"])

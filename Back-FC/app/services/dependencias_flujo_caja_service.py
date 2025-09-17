@@ -14,6 +14,7 @@ from app.models.conceptos_flujo_caja import ConceptoFlujoCaja, TipoDependencia, 
 from app.models.transacciones_flujo_caja import TransaccionFlujoCaja, AreaTransaccion
 from app.models.cuentas_bancarias import CuentaBancaria
 from app.schemas.flujo_caja import AreaTransaccionSchema
+from app.services.dias_habiles_service import DiasHabilesService
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +25,7 @@ class DependenciasFlujoCajaService:
     
     def __init__(self, db: Session):
         self.db = db
+        self.dias_habiles_service = DiasHabilesService(db)
     
     def _convertir_area_a_enum(self, area: AreaTransaccionSchema) -> AreaTransaccion:
         """Convierte área de transacción schema a enum de base de datos"""
@@ -217,13 +219,14 @@ class DependenciasFlujoCajaService:
             actualizaciones = []
             
             # PRIMERO: Procesar auto-cálculo del SALDO INICIAL del día anterior
-            saldo_inicial_updates = self._procesar_saldo_inicial_automatico(
-                fecha=fecha,
-                cuenta_id=cuenta_id,
-                compania_id=compania_id,
-                usuario_id=usuario_id or 1
-            )
-            actualizaciones.extend(saldo_inicial_updates)
+            # ⚠️ DESHABILITADO: Interfiere con proyecciones de días hábiles
+            # saldo_inicial_updates = self._procesar_saldo_inicial_automatico(
+            #     fecha=fecha,
+            #     cuenta_id=cuenta_id,
+            #     compania_id=compania_id,
+            #     usuario_id=usuario_id or 1
+            # )
+            # actualizaciones.extend(saldo_inicial_updates)
             
             # SEGUNDO: Procesar dependencias normales
             conceptos_dependientes = self._obtener_conceptos_dependientes(area)
@@ -746,9 +749,9 @@ class DependenciasFlujoCajaService:
         try:
             actualizaciones = []
             
-            # Obtener todas las cuentas activas si no se especifica una
+            # Obtener todas las cuentas si no se especifica una
             if cuenta_id is None:
-                cuentas = self.db.query(CuentaBancaria).filter(CuentaBancaria.activa == True).all()
+                cuentas = self.db.query(CuentaBancaria).all()
                 cuentas_ids = [cuenta.id for cuenta in cuentas]
             else:
                 cuentas_ids = [cuenta_id]
@@ -1343,9 +1346,10 @@ class DependenciasFlujoCajaService:
                         
                         logger.info(f"✅ SALDO TOTAL EN BANCOS actualizado: Cuenta {cuenta}, ${monto_anterior} → ${saldo_total_bancos}")
                         
-                        # 🚀 LÓGICA PROACTIVA: Proyectar SALDO TOTAL EN BANCOS actualizado → SALDO DÍA ANTERIOR del día siguiente
+                        # 🚀 LÓGICA PROACTIVA: Proyectar SALDO TOTAL EN BANCOS actualizado → SALDO DÍA ANTERIOR del próximo día hábil
                         try:
-                            fecha_siguiente = fecha + timedelta(days=1)
+                            # Usar días hábiles para proyección inteligente
+                            fecha_siguiente = self.dias_habiles_service.proximo_dia_habil(fecha, incluir_fecha_actual=False)
                             
                             # Verificar si ya existe SALDO DÍA ANTERIOR para el día siguiente
                             saldo_dia_siguiente = self.db.query(TransaccionFlujoCaja).filter(
@@ -1359,9 +1363,9 @@ class DependenciasFlujoCajaService:
                                 # Actualizar proyección existente
                                 monto_anterior_proyectado = saldo_dia_siguiente.monto
                                 saldo_dia_siguiente.monto = saldo_total_bancos
-                                saldo_dia_siguiente.descripcion = f"Auto-calculado: SALDO TOTAL BANCOS del {fecha}"
+                                saldo_dia_siguiente.descripcion = f"Auto-calculado: SALDO TOTAL BANCOS del {fecha} (próximo día hábil)"
                                 
-                                logger.info(f"🔄 PROYECCIÓN ACTUALIZADA: SALDO DÍA ANTERIOR del {fecha_siguiente}: ${monto_anterior_proyectado} → ${saldo_total_bancos}")
+                                logger.info(f"🔄 PROYECCIÓN ACTUALIZADA (días hábiles): SALDO DÍA ANTERIOR del {fecha_siguiente}: ${monto_anterior_proyectado} → ${saldo_total_bancos}")
                             else:
                                 # Crear nueva proyección
                                 nueva_proyeccion = TransaccionFlujoCaja(
@@ -1369,7 +1373,7 @@ class DependenciasFlujoCajaService:
                                     concepto_id=54,  # SALDO DÍA ANTERIOR
                                     cuenta_id=cuenta,
                                     monto=saldo_total_bancos,
-                                    descripcion=f"Auto-calculado: SALDO TOTAL BANCOS del {fecha}",
+                                    descripcion=f"Auto-calculado: SALDO TOTAL BANCOS del {fecha} (próximo día hábil)",
                                     usuario_id=usuario_id or 1,
                                     area=AreaTransaccion.pagaduria,
                                     compania_id=compania_id or 1,
@@ -1388,7 +1392,7 @@ class DependenciasFlujoCajaService:
                                 )
                                 
                                 self.db.add(nueva_proyeccion)
-                                logger.info(f"🚀 PROYECCIÓN CREADA: SALDO DÍA ANTERIOR para {fecha_siguiente}: ${saldo_total_bancos}")
+                                logger.info(f"🚀 PROYECCIÓN CREADA (días hábiles): SALDO DÍA ANTERIOR para {fecha_siguiente}: ${saldo_total_bancos}")
                         except Exception as e:
                             logger.warning(f"⚠️ Error en proyección al actualizar SALDO TOTAL EN BANCOS: {e}")
                         
@@ -1444,9 +1448,10 @@ class DependenciasFlujoCajaService:
                         self.db.add(nueva_transaccion_saldo_total)
                         logger.info(f"✅ SALDO TOTAL EN BANCOS creado: Cuenta {cuenta}, ${saldo_total_bancos}")
                     
-                    # 🚀 LÓGICA PROACTIVA: Proyectar SALDO TOTAL EN BANCOS del día actual → SALDO DÍA ANTERIOR del día siguiente
+                    # 🚀 LÓGICA PROACTIVA: Proyectar SALDO TOTAL EN BANCOS del día actual → SALDO DÍA ANTERIOR del próximo día hábil
                     try:
-                        fecha_siguiente = fecha + timedelta(days=1)
+                        # Usar días hábiles para proyección inteligente
+                        fecha_siguiente = self.dias_habiles_service.proximo_dia_habil(fecha, incluir_fecha_actual=False)
                         
                         # Verificar si ya existe SALDO DÍA ANTERIOR para el día siguiente
                         saldo_dia_siguiente = self.db.query(TransaccionFlujoCaja).filter(
@@ -1460,9 +1465,9 @@ class DependenciasFlujoCajaService:
                             # Actualizar existente
                             monto_anterior_proyectado = saldo_dia_siguiente.monto
                             saldo_dia_siguiente.monto = saldo_total_bancos
-                            saldo_dia_siguiente.descripcion = f"Auto-calculado: SALDO TOTAL BANCOS del {fecha}"
+                            saldo_dia_siguiente.descripcion = f"Auto-calculado: SALDO TOTAL BANCOS del {fecha} (próximo día hábil)"
                             
-                            logger.info(f"🔄 PROYECCIÓN: SALDO DÍA ANTERIOR del {fecha_siguiente} actualizado: ${monto_anterior_proyectado} → ${saldo_total_bancos}")
+                            logger.info(f"🔄 PROYECCIÓN (días hábiles): SALDO DÍA ANTERIOR del {fecha_siguiente} actualizado: ${monto_anterior_proyectado} → ${saldo_total_bancos}")
                         else:
                             # Crear nueva proyección para el día siguiente
                             nueva_proyeccion = TransaccionFlujoCaja(
@@ -1470,7 +1475,7 @@ class DependenciasFlujoCajaService:
                                 concepto_id=54,  # SALDO DÍA ANTERIOR
                                 cuenta_id=cuenta,
                                 monto=saldo_total_bancos,
-                                descripcion=f"Auto-calculado: SALDO TOTAL BANCOS del {fecha}",
+                                descripcion=f"Auto-calculado: SALDO TOTAL BANCOS del {fecha} (próximo día hábil)",
                                 usuario_id=usuario_id or 1,
                                 area=AreaTransaccion.pagaduria,
                                 compania_id=compania_id or 1,
@@ -1489,7 +1494,7 @@ class DependenciasFlujoCajaService:
                             )
                             
                             self.db.add(nueva_proyeccion)
-                            logger.info(f"🚀 PROYECCIÓN: SALDO DÍA ANTERIOR creado para {fecha_siguiente}: ${saldo_total_bancos}")
+                            logger.info(f"🚀 PROYECCIÓN (días hábiles): SALDO DÍA ANTERIOR creado para {fecha_siguiente}: ${saldo_total_bancos}")
                     except Exception as e:
                         logger.warning(f"⚠️ Error en proyección SALDO DÍA ANTERIOR: {e}")
                     
@@ -1514,6 +1519,81 @@ class DependenciasFlujoCajaService:
                         componentes_faltantes.append("MOVIMIENTO TESORERIA (ID 84)")
                     
                     logger.info(f"⚠️ No se puede calcular SALDO TOTAL EN BANCOS para cuenta {cuenta}. Faltan: {', '.join(componentes_faltantes)}")
+            
+            # 🚀 NUEVA LÓGICA: PROYECCIÓN PARA TESORERÍA
+            # SALDO FINAL CUENTAS (ID 51) → SALDO INICIAL (ID 1) del próximo día hábil
+            for cuenta in cuentas_ids:
+                # Buscar SALDO FINAL CUENTAS del día actual en área tesorería
+                saldo_final_cuentas = self.db.query(TransaccionFlujoCaja).filter(
+                    TransaccionFlujoCaja.fecha == fecha,
+                    TransaccionFlujoCaja.concepto_id == 51,  # SALDO FINAL CUENTAS
+                    TransaccionFlujoCaja.cuenta_id == cuenta,
+                    TransaccionFlujoCaja.area == AreaTransaccion.tesoreria
+                ).first()
+                
+                if saldo_final_cuentas and saldo_final_cuentas.monto != 0:
+                    try:
+                        # 🔍 DEBUG: Capturar el valor ANTES de usarlo
+                        monto_original = saldo_final_cuentas.monto
+                        logger.info(f"🔍 DEBUG PROYECCIÓN TESORERÍA - Cuenta {cuenta}: Monto leído = ${monto_original}")
+                        
+                        # Usar días hábiles para proyección inteligente
+                        fecha_siguiente = self.dias_habiles_service.proximo_dia_habil(fecha, incluir_fecha_actual=False)
+                        
+                        # Verificar si ya existe SALDO INICIAL para el día siguiente
+                        saldo_inicial_siguiente = self.db.query(TransaccionFlujoCaja).filter(
+                            TransaccionFlujoCaja.fecha == fecha_siguiente,
+                            TransaccionFlujoCaja.concepto_id == 1,  # SALDO INICIAL
+                            TransaccionFlujoCaja.cuenta_id == cuenta,
+                            TransaccionFlujoCaja.area == AreaTransaccion.tesoreria
+                        ).first()
+                        
+                        # 🔍 DEBUG: Verificar que el monto no cambió
+                        monto_antes_asignar = saldo_final_cuentas.monto
+                        logger.info(f"🔍 DEBUG PROYECCIÓN TESORERÍA - Cuenta {cuenta}: Monto antes de asignar = ${monto_antes_asignar}")
+                        
+                        if saldo_inicial_siguiente:
+                            # Actualizar proyección existente
+                            monto_anterior_proyectado = saldo_inicial_siguiente.monto
+                            saldo_inicial_siguiente.monto = monto_original  # Usar el valor capturado
+                            saldo_inicial_siguiente.descripcion = f"Auto-calculado: SALDO FINAL CUENTAS del {fecha} (próximo día hábil)"
+                            
+                            logger.info(f"🔄 PROYECCIÓN TESORERÍA (días hábiles): SALDO INICIAL del {fecha_siguiente} actualizado: ${monto_anterior_proyectado} → ${monto_original}")
+                        else:
+                            # Crear nueva proyección para el día siguiente
+                            nueva_proyeccion = TransaccionFlujoCaja(
+                                fecha=fecha_siguiente,
+                                concepto_id=1,  # SALDO INICIAL
+                                cuenta_id=cuenta,
+                                monto=monto_original,  # Usar el valor capturado
+                                descripcion=f"Auto-calculado: SALDO FINAL CUENTAS del {fecha} (próximo día hábil)",
+                                usuario_id=usuario_id or 1,
+                                area=AreaTransaccion.tesoreria,
+                                compania_id=compania_id or 1,
+                                auditoria={
+                                    "accion": "proyeccion_automatica_tesoreria",
+                                    "usuario_id": usuario_id or 1,
+                                    "timestamp": datetime.now().isoformat(),
+                                    "origen": {
+                                        "concepto_origen_id": 51,
+                                        "concepto_origen_nombre": "SALDO FINAL CUENTAS",
+                                        "fecha_origen": fecha.isoformat(),
+                                        "monto_origen": float(monto_original)  # Usar el valor capturado
+                                    },
+                                    "destino": {
+                                        "concepto_destino_id": 1,
+                                        "concepto_destino_nombre": "SALDO INICIAL",
+                                        "fecha_destino": fecha_siguiente.isoformat()
+                                    },
+                                    "tipo": "proyeccion_dias_habiles_tesoreria"
+                                }
+                            )
+                            
+                            self.db.add(nueva_proyeccion)
+                            logger.info(f"🚀 PROYECCIÓN TESORERÍA (días hábiles): SALDO INICIAL creado para {fecha_siguiente}: ${monto_original}")
+                            
+                    except Exception as e:
+                        logger.error(f"❌ Error en proyección de tesorería para cuenta {cuenta}: {e}")
             
             # Commit de todas las actualizaciones
             if actualizaciones:

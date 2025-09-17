@@ -113,19 +113,20 @@ def obtener_transacciones_por_fecha(
     """Obtener todas las transacciones de una fecha específica"""
     service = TransaccionFlujoCajaService(db)
     
-    # 🔥 AUTO-INICIALIZACIÓN: Asegurar que existe SALDO INICIAL para esta fecha
-    dependencias_service = DependenciasFlujoCajaService(db)
-    try:
-        # Ejecutar auto-cálculo de SALDO INICIAL si es necesario
-        dependencias_service._procesar_saldo_inicial_automatico(
-            fecha=fecha,
-            compania_id=getattr(current_user, "compania_id", 1),
-            usuario_id=getattr(current_user, "id", 1)
-        )
-    except Exception as e:
-        # Si hay error, log pero no fallar la consulta
-        import logging
-        logging.warning(f"Error en auto-inicialización SALDO INICIAL para {fecha}: {e}")
+    # 🔥 AUTO-INICIALIZACIÓN DESHABILITADA TEMPORALMENTE
+    # Esta lógica interfiere con las proyecciones de días hábiles
+    # dependencias_service = DependenciasFlujoCajaService(db)
+    # try:
+    #     # Ejecutar auto-cálculo de SALDO INICIAL si es necesario
+    #     dependencias_service._procesar_saldo_inicial_automatico(
+    #         fecha=fecha,
+    #         compania_id=getattr(current_user, "compania_id", 1),
+    #         usuario_id=getattr(current_user, "id", 1)
+    #     )
+    # except Exception as e:
+    #     # Si hay error, log pero no fallar la consulta
+    #     import logging
+    #     logging.warning(f"Error en auto-inicialización SALDO INICIAL para {fecha}: {e}")
     
     transacciones = service.obtener_transacciones_por_fecha(fecha, area)
     return transacciones
@@ -347,20 +348,21 @@ def obtener_dashboard_pagaduria(
 ):
     """Obtener datos específicos para el dashboard de pagaduría"""
     
-    # 🔥 AUTO-PROCESAMIENTO: Ejecutar dependencias de pagaduría
-    dependencias_service = DependenciasFlujoCajaService(db)
-    try:
-        # Procesar dependencias automáticas de pagaduría
-        dependencias_service.procesar_dependencias_avanzadas(
-            fecha=fecha,
-            area=AreaTransaccionSchema.pagaduria,
-            compania_id=getattr(current_user, "compania_id", 1),
-            usuario_id=getattr(current_user, "id", 1)
-        )
-    except Exception as e:
-        # Si hay error, log pero no fallar la consulta
-        import logging
-        logging.warning(f"Error en auto-procesamiento pagaduría para {fecha}: {e}")
+    # 🔥 AUTO-PROCESAMIENTO DESHABILITADO TEMPORALMENTE
+    # Interfiere con proyecciones de días hábiles
+    # dependencias_service = DependenciasFlujoCajaService(db)
+    # try:
+    #     # Procesar dependencias automáticas de pagaduría
+    #     dependencias_service.procesar_dependencias_avanzadas(
+    #         fecha=fecha,
+    #         area=AreaTransaccionSchema.pagaduria,
+    #         compania_id=getattr(current_user, "compania_id", 1),
+    #         usuario_id=getattr(current_user, "id", 1)
+    #     )
+    # except Exception as e:
+    #     # Si hay error, log pero no fallar la consulta
+    #     import logging
+    #     logging.warning(f"Error en auto-procesamiento pagaduría para {fecha}: {e}")
     
     service = TransaccionFlujoCajaService(db)
     flujo_diario = service.obtener_flujo_caja_diario(fecha, AreaConceptoSchema.pagaduria)

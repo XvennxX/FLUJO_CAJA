@@ -295,7 +295,7 @@ const cashFlowData: CashFlowData = {
 const companies = ['CAPITALIZADORA', 'SEGUROS BOLÍVAR', 'COMERCIALES', 'GRUPO BOLIVAR', 'SEISA', 'RIBI', 'INVERSORAS', 'SALUD EPS BOLIVAR', 'SALUD IPS BOLIVAR', 'SERVICIOS BOLIVAR'];
 export default function Dashboard() {
   // Asegurar que siempre inicie con el 22 de enero
-  const [selectedDate, setSelectedDate] = useState('2025-01-22');
+    const [selectedDate, setSelectedDate] = useState('2025-01-22');
   const { logCashFlowChange, logImportAction } = useAuditoria();
   
   // Verificar que la fecha inicial sea válida y forzar actualización si es necesaria
@@ -417,6 +417,7 @@ export default function Dashboard() {
             selectedDate={selectedDate}
             onDateChange={handleDateChange}
             availableDates={availableDates}
+            onlyBusinessDays={true}
           />
         </div>
 
