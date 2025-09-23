@@ -7,6 +7,7 @@ interface CeldaEditableProps {
   conceptoId: number;
   cuentaId: number | null;
   companiaId?: number;
+  currency?: string; // Nueva prop para la moneda
   onGuardar: (conceptoId: number, cuentaId: number | null, monto: number, companiaId?: number) => Promise<boolean>;
   disabled?: boolean;
 }
@@ -16,6 +17,7 @@ export const CeldaEditable: React.FC<CeldaEditableProps> = ({
   conceptoId,
   cuentaId,
   companiaId,
+  currency,
   onGuardar,
   disabled = false
 }) => {
@@ -281,7 +283,7 @@ export const CeldaEditable: React.FC<CeldaEditableProps> = ({
           
           return (
             <span className={`${getValueStyle(valor)} ${isDisabled ? 'text-gray-600 dark:text-gray-400' : ''}`}>
-              {valor < 0 ? `(${formatCurrency(Math.abs(valor))})` : formatCurrency(valor)}
+              {valor < 0 ? `(${formatCurrency(Math.abs(valor), currency)})` : formatCurrency(valor, currency)}
             </span>
           );
         } catch (error) {

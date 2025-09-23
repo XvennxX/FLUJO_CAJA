@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Building2, Download, RefreshCw, AlertCircle } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { formatCurrency } from '../../utils/formatters';
+import { useTRM } from '../../hooks/useTRM';
+import { useTRMByDate } from '../../hooks/useTRMByDate';
 import { useConceptosFlujoCaja, ConceptoFlujoCaja } from '../../hooks/useConceptosFlujoCaja';
 import { useTransaccionesFlujoCaja, TransaccionFlujoCaja } from '../../hooks/useTransaccionesFlujoCaja';
 import { useDashboardWebSocket } from '../../hooks/useWebSocket';
@@ -62,6 +64,12 @@ const DashboardTesoreria: React.FC = () => {
   // Estado para forzar re-render cuando cambien las transacciones
   const [forceUpdate, setForceUpdate] = useState(0);
   
+  // Estado para multi-moneda
+  const [usarMultiMoneda, setUsarMultiMoneda] = useState<boolean>(false);
+  
+  // Hook para obtener TRM de la fecha seleccionada
+  const { trm, loading: trmLoading, error: trmError, refetch: refetchTRM } = useTRMByDate(selectedDate);
+  
   // Hook para obtener conceptos desde el backend
   const { conceptosTesoreria, loading: conceptosLoading, error: conceptosError } = useConceptosFlujoCaja();
   
@@ -85,6 +93,38 @@ const DashboardTesoreria: React.FC = () => {
     console.log('🔄 [TESORERÍA] Recargando datos por WebSocket...');
     cargarTransacciones();
   });
+  
+  // Función para conversión de moneda
+  const convertirMoneda = (monto: number, tipoMonedaCuenta: string): number => {
+    console.log(`🔄 convertirMoneda called:`, { monto, tipoMonedaCuenta, usarMultiMoneda, trmValue: trm?.valor });
+    
+    if (!usarMultiMoneda || !trm) {
+      console.log(`❌ No conversion: usarMultiMoneda=${usarMultiMoneda}, trm=${!!trm}`);
+      return monto;
+    }
+    
+    // Si la cuenta es USD, convertir de COP a USD
+    if (tipoMonedaCuenta === 'USD') {
+      const convertido = Math.floor((monto / trm.valor) * 100) / 100; // Truncar a 2 decimales (no redondear)
+      console.log(`💱 Converting ${monto} COP to ${convertido} USD (TRM: ${trm.valor})`);
+      return convertido;
+    }
+    
+    // Si la cuenta es COP, mantener el monto original
+    console.log(`✅ Keeping COP value: ${monto}`);
+    return monto;
+  };
+
+  // Función para obtener monto con conversión de moneda
+  const obtenerMontoConConversion = (conceptoId: number, cuentaId: number, tipoMonedaCuenta?: string): number => {
+    const montoOriginal = obtenerMonto(conceptoId, cuentaId);
+    
+    if (!usarMultiMoneda || !tipoMonedaCuenta) {
+      return montoOriginal;
+    }
+    
+    return convertirMoneda(montoOriginal, tipoMonedaCuenta);
+  };
   
   // Cargar todas las cuentas bancarias al inicializar el componente
   useEffect(() => {
@@ -225,6 +265,41 @@ const DashboardTesoreria: React.FC = () => {
       tipo: concepto.tipo,
       id: concepto.id // Incluir ID para vincular con transacciones
     }));
+  };
+
+  // Función para expandir cuentas por moneda manteniendo el orden
+  const expandirCuentasPorMoneda = (cuentas: BankAccount[]) => {
+    if (!usarMultiMoneda) {
+      return cuentas.map(cuenta => ({
+        ...cuenta,
+        cuenta_moneda_id: `${cuenta.id}_${cuenta.monedas[0] || 'COP'}`,
+        moneda_display: cuenta.monedas[0] || 'COP',
+        tipo_moneda: cuenta.monedas[0] || 'COP', // Agregar tipo_moneda para compatibilidad
+        nombre_con_moneda: `${cuenta.banco.nombre} ${cuenta.numero_cuenta.slice(-4)}`,
+        es_expansion: false
+      }));
+    }
+
+    const cuentasExpandidas: any[] = [];
+    
+    cuentas.forEach(cuenta => {
+      const monedas = cuenta.monedas && cuenta.monedas.length > 0 ? cuenta.monedas : ['COP'];
+      
+      monedas.forEach((moneda, index) => {
+        const cuentaExpandida = {
+          ...cuenta,
+          cuenta_moneda_id: `${cuenta.id}_${moneda}`,
+          moneda_display: moneda,
+          tipo_moneda: moneda, // Agregar tipo_moneda para compatibilidad
+          nombre_con_moneda: `${cuenta.banco.nombre} ${cuenta.numero_cuenta.slice(-4)} (${moneda})`,
+          es_expansion: index > 0 // Marcar si es una expansión de moneda adicional
+        };
+        console.log(`📊 Cuenta expandida:`, cuentaExpandida);
+        cuentasExpandidas.push(cuentaExpandida);
+      });
+    });
+
+    return cuentasExpandidas;
   };
 
   // Función para determinar categoría basada en el nombre del concepto
@@ -688,7 +763,7 @@ const DashboardTesoreria: React.FC = () => {
   };
 
   // Función wrapper para obtener montos aplicando la lógica de signos automáticos
-  const obtenerMontoConSignos = (conceptoId: number, cuentaId: number): number => {
+  const obtenerMontoConSignos = (conceptoId: number, cuentaId: number, tipoMonedaCuenta?: string): number => {
     try {
       // Validar parámetros de entrada
       if (!conceptoId || !cuentaId) {
@@ -701,8 +776,8 @@ const DashboardTesoreria: React.FC = () => {
         console.log('🔍 DEBUG SALDO INICIAL:', { conceptoId, cuentaId, selectedDate });
       }
       
-      // Obtener el monto original
-      const montoOriginal = obtenerMonto(conceptoId, cuentaId);
+      // Obtener el monto original con conversión de moneda
+      const montoOriginal = obtenerMontoConConversion(conceptoId, cuentaId, tipoMonedaCuenta);
       
       // Debug para SALDO INICIAL
       if (conceptoId === 1) {
@@ -858,6 +933,26 @@ const DashboardTesoreria: React.FC = () => {
               )}
             </div>
             <p className="text-gray-600 dark:text-gray-400">Flujo de caja por compañías - {user?.name}</p>
+            {/* Indicador TRM */}
+            <div className="flex items-center space-x-2 mt-1">
+              <span className="text-sm text-gray-500 dark:text-gray-400">TRM:</span>
+              {trmLoading ? (
+                <span className="text-sm text-gray-400">Cargando...</span>
+              ) : trmError ? (
+                <span className="text-sm text-red-500" title={trmError}>Error al cargar TRM</span>
+              ) : trm ? (
+                <div className="flex items-center space-x-1">
+                  <span className="text-sm font-semibold text-blue-600 dark:text-blue-400">
+                    ${parseFloat(trm.valor.toString()).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                  <span className="text-xs text-gray-400">
+                    ({trm.fecha})
+                  </span>
+                </div>
+              ) : (
+                <span className="text-sm text-gray-400">No disponible</span>
+              )}
+            </div>
           </div>
         </div>
         
@@ -905,6 +1000,25 @@ const DashboardTesoreria: React.FC = () => {
             )}
           </div>
           
+          {/* Toggle Multi-Moneda */}
+          <div className="flex items-center space-x-2">
+            <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              Multi-Moneda
+            </label>
+            <button
+              onClick={() => setUsarMultiMoneda(!usarMultiMoneda)}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                usarMultiMoneda ? 'bg-green-600' : 'bg-gray-200 dark:bg-gray-700'
+              }`}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  usarMultiMoneda ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
+            </button>
+          </div>
+          
           <button className="flex items-center space-x-2 px-3 py-2 bg-bolivar-600 text-white rounded-lg hover:bg-bolivar-700 transition-colors text-sm">
             <RefreshCw className="h-4 w-4" />
             <span>Actualizar</span>
@@ -920,14 +1034,19 @@ const DashboardTesoreria: React.FC = () => {
       {/* Tabla estilo Excel - SIN fechas, solo compañías y cuentas */}
       <div className="bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg overflow-hidden shadow-lg">
         <div className="overflow-x-auto">
+          {(() => {
+            // Expandir cuentas por moneda si está activado el modo multi-moneda
+            const cuentasExpandidas = expandirCuentasPorMoneda(bankAccounts);
+            
+            return (
           <table className="w-full border-collapse text-xs">
             <thead>
               {/* FILA 1 - SOLO COMPAÑÍAS */}
               <tr>
                 <th colSpan={3} className="bg-white dark:bg-gray-800 border border-gray-400 dark:border-gray-500 sticky left-0 z-20 min-w-[100px]"></th>
                 {/* Compañías reales desde la base de datos */}
-                {bankAccounts.map((account) => (
-                  <th key={`company-${account.id}`} className="bg-blue-200 dark:bg-blue-800 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-900 dark:text-white font-bold text-center min-w-[120px]">
+                {cuentasExpandidas.map((account) => (
+                  <th key={`company-${account.cuenta_moneda_id}`} className="bg-blue-200 dark:bg-blue-800 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-900 dark:text-white font-bold text-center min-w-[120px]">
                     {account.compania?.nombre || 'COMPAÑÍA DESCONOCIDA'}
                   </th>
                 ))}
@@ -941,9 +1060,9 @@ const DashboardTesoreria: React.FC = () => {
               <tr>
                 <th colSpan={3} className="bg-white dark:bg-gray-800 border border-gray-400 dark:border-gray-500 sticky left-0 z-20 min-w-[100px]"></th>
                 {/* Bancos reales desde la base de datos */}
-                {bankAccounts.map((account) => (
-                  <th key={`bank-${account.id}`} className="bg-blue-100 dark:bg-blue-900/50 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-800 dark:text-gray-200 font-semibold text-center text-xs">
-                    {account.banco?.nombre || 'BANCO DESCONOCIDO'}
+                {cuentasExpandidas.map((account) => (
+                  <th key={`bank-${account.cuenta_moneda_id}`} className="bg-blue-100 dark:bg-blue-900/50 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-800 dark:text-gray-200 font-semibold text-center text-xs">
+                    {account.nombre_con_moneda || 'BANCO DESCONOCIDO'}
                   </th>
                 ))}
                 {/* Columna TOTALES */}
@@ -964,9 +1083,18 @@ const DashboardTesoreria: React.FC = () => {
                   CONCEPTO
                 </th>
                 {/* Cuentas bancarias reales desde la base de datos */}
-                {bankAccounts.map((account) => (
-                  <th key={account.id} className="bg-gray-100 dark:bg-gray-700 border border-gray-400 dark:border-gray-500 px-1 py-1 text-gray-700 dark:text-gray-300 font-medium text-center text-xs">
-                    {account.numero_cuenta}
+                {cuentasExpandidas.map((account) => (
+                  <th key={account.cuenta_moneda_id} className="bg-gray-100 dark:bg-gray-700 border border-gray-400 dark:border-gray-500 px-1 py-1 text-gray-700 dark:text-gray-300 font-medium text-center text-xs">
+                    <div className="flex flex-col">
+                      <span>{account.numero_cuenta}</span>
+                      {usarMultiMoneda && (
+                        <span className={`px-1 py-0.5 rounded text-xs font-bold ${
+                          account.moneda_display === 'USD' ? 'bg-green-200 text-green-800' : 'bg-yellow-200 text-yellow-800'
+                        }`}>
+                          {account.moneda_display}
+                        </span>
+                      )}
+                    </div>
                   </th>
                 ))}
                 {/* Columna TOTALES */}
@@ -1013,7 +1141,7 @@ const DashboardTesoreria: React.FC = () => {
 
                   {/* CELDAS DE DATOS - Solo cuentas bancarias reales */}
                   {/* Columnas de cuentas bancarias reales */}
-                  {bankAccounts.map((account) => {
+                  {cuentasExpandidas.map((account) => {
                     // Verificar si es el concepto "SALDO NETO INICIAL PAGADURÍA"
                     const esSaldoNetoPagaduria = concepto.nombre === 'SALDO NETO INICIAL PAGADURÍA';
                     // Verificar si es el concepto "SALDO INICIAL"
@@ -1024,7 +1152,7 @@ const DashboardTesoreria: React.FC = () => {
                       const valorCalculado = safeNumericValue(calculateSaldoNetoPagaduria(account.id));
                       
                       return (
-                        <td key={`data-${account.id}`} className="border border-gray-400 dark:border-gray-500 px-1 py-1 text-center text-xs bg-yellow-50 dark:bg-yellow-900/20">
+                        <td key={`data-${account.cuenta_moneda_id}`} className="border border-gray-400 dark:border-gray-500 px-1 py-1 text-center text-xs bg-yellow-50 dark:bg-yellow-900/20">
                           {valorCalculado !== 0 ? (
                             <span className={`font-bold ${valorCalculado < 0 ? 'text-red-700 dark:text-red-400' : 'text-green-700 dark:text-green-400'}`}>
                               {valorCalculado < 0 ? `(${formatCurrency(Math.abs(valorCalculado))})` : formatCurrency(valorCalculado)}
@@ -1051,7 +1179,7 @@ const DashboardTesoreria: React.FC = () => {
                       const valorSaldoInicialFinal = safeNumericValue(valorSaldoInicial);
                       
                       return (
-                        <td key={`data-${account.id}`} className="border border-gray-400 dark:border-gray-500 px-1 py-1 text-center text-xs bg-purple-50 dark:bg-purple-900/20">
+                        <td key={`data-${account.cuenta_moneda_id}`} className="border border-gray-400 dark:border-gray-500 px-1 py-1 text-center text-xs bg-purple-50 dark:bg-purple-900/20">
                           {valorSaldoInicialFinal !== 0 ? (
                             <span className={`font-bold ${valorSaldoInicialFinal < 0 ? 'text-red-700 dark:text-red-400' : 'text-green-700 dark:text-green-400'}`}>
                               {valorSaldoInicialFinal < 0 ? `(${formatCurrency(Math.abs(valorSaldoInicialFinal))})` : formatCurrency(valorSaldoInicialFinal)}
@@ -1063,16 +1191,17 @@ const DashboardTesoreria: React.FC = () => {
                       );
                     } else {
                       // Para otros conceptos, usar celda editable normal
-                      const valorCuenta = concepto.id ? obtenerMontoConSignos(concepto.id, account.id) : 0;
+                      const valorCuenta = concepto.id ? obtenerMontoConSignos(concepto.id, account.id, account.tipo_moneda) : 0;
                       const valorSeguro = safeNumericValue(valorCuenta);
                       
                       return (
-                        <td key={`data-${account.id}`} className="border border-gray-400 dark:border-gray-500 px-1 py-1 text-center text-xs">
+                        <td key={`data-${account.cuenta_moneda_id}`} className="border border-gray-400 dark:border-gray-500 px-1 py-1 text-center text-xs">
                           <CeldaEditable
                             valor={valorSeguro}
                             conceptoId={concepto.id || 0}
                             cuentaId={account.id}
                             companiaId={account.compania.id}
+                            currency={account.tipo_moneda}
                             onGuardar={guardarTransaccionConSignos}
                             disabled={!concepto.id || transaccionesLoading || isConceptoAutoCalculado(concepto.id)}
                           />
@@ -1104,7 +1233,7 @@ const DashboardTesoreria: React.FC = () => {
 
               {/* SEPARADOR */}
               <tr>
-                <td colSpan={4 + bankAccounts.length} 
+                <td colSpan={4 + cuentasExpandidas.length} 
                     className="bg-gray-300 dark:bg-gray-600 h-2 border border-gray-400 dark:border-gray-500"></td>
               </tr>
 
@@ -1116,12 +1245,12 @@ const DashboardTesoreria: React.FC = () => {
                   SUB-TOTAL TESORERÍA
                 </td>
                 {/* Columnas de cuentas bancarias reales */}
-                {bankAccounts.map((account) => {
+                {cuentasExpandidas.map((account) => {
                   const subtotalCuenta = calculateSubtotalTesoreria(account.id);
                   const subtotalValido = !isNaN(subtotalCuenta) && isFinite(subtotalCuenta) ? subtotalCuenta : 0;
                   
                   return (
-                    <td key={`subtotal-${account.id}`} className="border border-gray-400 dark:border-gray-500 px-2 py-2 text-center font-bold text-gray-900 dark:text-white">
+                    <td key={`subtotal-${account.cuenta_moneda_id}`} className="border border-gray-400 dark:border-gray-500 px-2 py-2 text-center font-bold text-gray-900 dark:text-white">
                       {subtotalValido !== 0 ? (
                         <span className={subtotalValido < 0 ? 'text-red-700 dark:text-red-400' : 'text-green-700 dark:text-green-400'}>
                           {subtotalValido < 0 ? `(${formatCurrency(Math.abs(subtotalValido))})` : formatCurrency(subtotalValido)}
@@ -1164,11 +1293,11 @@ const DashboardTesoreria: React.FC = () => {
                   SALDO FINAL CUENTAS
                 </td>
                 {/* Columnas de cuentas bancarias reales */}
-                {bankAccounts.map((account) => {
+                {cuentasExpandidas.map((account) => {
                   const valorSaldoFinal = calculateSaldoFinalCuentas(account.id);
                   
                   return (
-                    <td key={`saldo-final-${account.id}`} className="border border-gray-400 dark:border-gray-500 px-1 py-2 text-center text-xs bg-blue-50 dark:bg-blue-900/20">
+                    <td key={`saldo-final-${account.cuenta_moneda_id}`} className="border border-gray-400 dark:border-gray-500 px-1 py-2 text-center text-xs bg-blue-50 dark:bg-blue-900/20">
                       {valorSaldoFinal !== 0 ? (
                         <span className={`font-bold ${valorSaldoFinal < 0 ? 'text-red-700 dark:text-red-400' : 'text-green-700 dark:text-green-400'}`}>
                           {valorSaldoFinal < 0 ? `(${formatCurrency(Math.abs(valorSaldoFinal))})` : formatCurrency(valorSaldoFinal)}
@@ -1204,6 +1333,8 @@ const DashboardTesoreria: React.FC = () => {
              
             </tbody>
           </table>
+            );
+          })()}
         </div>
       </div>
 
