@@ -7,8 +7,9 @@ import sys
 import os
 from datetime import date, timedelta
 
-# Agregar el directorio padre al path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Agregar el directorio raíz del proyecto al path
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, project_root)
 
 from scripts.trm.trm_scraper import TRMScraper
 from app.core.database import SessionLocal
@@ -93,16 +94,19 @@ def update_specific_date(fecha_str: str):
 
 if __name__ == "__main__":
     if len(sys.argv) > 1:
-        # Si se proporciona una fecha específica
-        fecha_especifica = sys.argv[1]
-        update_specific_date(fecha_especifica)
+        arg = sys.argv[1]
+        
+        # Verificar si es una fecha (formato YYYY-MM-DD) o número de días
+        if '-' in arg and len(arg) == 10:
+            # Es una fecha específica
+            update_specific_date(arg)
+        else:
+            # Es número de días
+            try:
+                days = int(arg)
+                update_missing_trm_for_days(days)
+            except ValueError:
+                print(f"❌ Argumento inválido: {arg}. Use número de días o fecha YYYY-MM-DD")
     else:
         # Verificar últimos 7 días por defecto
-        days = 7
-        if len(sys.argv) > 1:
-            try:
-                days = int(sys.argv[1])
-            except ValueError:
-                print("Número de días inválido, usando 7 por defecto")
-        
-        update_missing_trm_for_days(days)
+        update_missing_trm_for_days(7)
