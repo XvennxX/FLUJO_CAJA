@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { Building2, Download, RefreshCw, AlertCircle } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { formatCurrency } from '../../utils/formatters';
-import { useTRM } from '../../hooks/useTRM';
 import { useTRMByDate } from '../../hooks/useTRMByDate';
 import { useConceptosFlujoCaja, ConceptoFlujoCaja } from '../../hooks/useConceptosFlujoCaja';
 import { useTransaccionesFlujoCaja, TransaccionFlujoCaja } from '../../hooks/useTransaccionesFlujoCaja';
@@ -11,8 +10,8 @@ import { CeldaEditable } from '../UI/CeldaEditable';
 import { ErrorBoundary } from '../UI/ErrorBoundary';
 import { SaldoInicialService } from '../../services/saldoInicialService';
 import DatePicker from '../Calendar/DatePicker';
-import DiasHabilesTest from '../DiasHabilesTest';
 import { isConceptoAutoCalculado } from '../../utils/conceptos';
+import { FiltrosDashboard } from '../Dashboard/FiltrosDashboard';
 
 interface Concepto {
   categoria: string;
@@ -61,14 +60,17 @@ const DashboardTesoreria: React.FC = () => {
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [loading, setLoading] = useState(true);
   
-  // Estado para forzar re-render cuando cambien las transacciones
-  const [forceUpdate, setForceUpdate] = useState(0);
+
   
   // Estado para multi-moneda
   const [usarMultiMoneda, setUsarMultiMoneda] = useState<boolean>(false);
   
+  // Estados para filtros
+  const [companiasFiltradas, setCompaniasFiltradas] = useState<number[]>([]);
+  const [bancosFiltrados, setBancosFiltrados] = useState<number[]>([]);
+  
   // Hook para obtener TRM de la fecha seleccionada
-  const { trm, loading: trmLoading, error: trmError, refetch: refetchTRM } = useTRMByDate(selectedDate);
+  const { trm, loading: trmLoading, error: trmError } = useTRMByDate(selectedDate);
   
   // Hook para obtener conceptos desde el backend
   const { conceptosTesoreria, loading: conceptosLoading, error: conceptosError } = useConceptosFlujoCaja();
@@ -85,11 +87,7 @@ const DashboardTesoreria: React.FC = () => {
   } = useTransaccionesFlujoCaja(selectedDate, 'tesoreria');
   
   // 🔄 WebSocket para actualizaciones en tiempo real
-  const { 
-    isConnected: wsConnected, 
-    updateCount, 
-    lastUpdateTime 
-  } = useDashboardWebSocket('tesoreria', () => {
+  useDashboardWebSocket('tesoreria', () => {
     console.log('🔄 [TESORERÍA] Recargando datos por WebSocket...');
     cargarTransacciones();
   });
@@ -124,6 +122,35 @@ const DashboardTesoreria: React.FC = () => {
     }
     
     return convertirMoneda(montoOriginal, tipoMonedaCuenta);
+  };
+
+  // Función para filtrar cuentas bancarias
+  const obtenerCuentasFiltradas = (): BankAccount[] => {
+    if (companiasFiltradas.length === 0 && bancosFiltrados.length === 0) {
+      // Si no hay filtros, mostrar todas las cuentas
+      return bankAccounts;
+    }
+    
+    return bankAccounts.filter(account => {
+      const cumpleCompania = companiasFiltradas.length === 0 || companiasFiltradas.includes(account.compania.id);
+      const cumpleBanco = bancosFiltrados.length === 0 || bancosFiltrados.includes(account.banco.id);
+      
+      return cumpleCompania && cumpleBanco;
+    });
+  };
+
+  // Funciones para manejar los filtros
+  const handleCompaniasChange = (nuevasCompanias: number[]) => {
+    setCompaniasFiltradas(nuevasCompanias);
+  };
+
+  const handleBancosChange = (nuevosBancos: number[]) => {
+    setBancosFiltrados(nuevosBancos);
+  };
+
+  const handleLimpiarFiltros = () => {
+    setCompaniasFiltradas([]);
+    setBancosFiltrados([]);
   };
   
   // Cargar todas las cuentas bancarias al inicializar el componente
@@ -250,10 +277,9 @@ const DashboardTesoreria: React.FC = () => {
     cargarTransaccionesDiaAnterior(selectedDate);
   }, [selectedDate]);
 
-  // Forzar actualización cuando cambien las transacciones
+  // Log cuando cambien las transacciones
   useEffect(() => {
-    setForceUpdate(prev => prev + 1);
-    console.log('🔄 Transacciones actualizadas, forzando re-render');
+    console.log('🔄 Transacciones actualizadas');
   }, [transacciones]);
 
   // Función para convertir conceptos del backend al formato del frontend
@@ -419,11 +445,14 @@ const DashboardTesoreria: React.FC = () => {
     try {
       let total = 0;
       
+      // Obtener cuentas filtradas para usar en todos los cálculos
+      const cuentasFiltradas = obtenerCuentasFiltradas();
+      
       // Manejar casos especiales de conceptos calculados
       if (concepto.nombre === 'SALDO INICIAL') {
         // Primero verificar si hay transacciones reales para SALDO INICIAL
-        if (concepto.id && bankAccounts.length > 0) {
-          total = bankAccounts.reduce((sum, account) => {
+        if (concepto.id && cuentasFiltradas.length > 0) {
+          total = cuentasFiltradas.reduce((sum, account) => {
             const valorCuenta = obtenerMontoConSignos(concepto.id!, account.id);
             const valorValido = isFinite(valorCuenta) ? valorCuenta : 0;
             return sum + valorValido;
@@ -441,8 +470,8 @@ const DashboardTesoreria: React.FC = () => {
       } else if (concepto.nombre === 'SALDO NETO INICIAL PAGADURÍA') {
         // Para SALDO NETO INICIAL PAGADURÍA, calcular sumando todas las cuentas
         
-        if (bankAccounts.length > 0) {
-          total = bankAccounts.reduce((sum, account) => {
+        if (cuentasFiltradas.length > 0) {
+          total = cuentasFiltradas.reduce((sum, account) => {
             const saldoNetoCuenta = calculateSaldoNetoPagaduria(account.id);
             return sum + (isFinite(saldoNetoCuenta) ? saldoNetoCuenta : 0);
           }, 0);
@@ -454,16 +483,19 @@ const DashboardTesoreria: React.FC = () => {
         return isFinite(total) ? total : 0;
       }
       
-      // Para conceptos normales, sumar el valor de todas las cuentas bancarias
-      if (concepto.id && bankAccounts.length > 0) {
-        total = bankAccounts.reduce((sum, account) => {
+      // Para conceptos normales, sumar el valor de todas las cuentas bancarias filtradas
+      if (concepto.id && cuentasFiltradas.length > 0) {
+        total = cuentasFiltradas.reduce((sum, account) => {
           const valorCuenta = obtenerMontoConSignos(concepto.id!, account.id);
           const valorValido = isFinite(valorCuenta) ? valorCuenta : 0;
           return sum + valorValido;
         }, 0);
       } else if (concepto.id) {
-        // Fallback: si no hay cuentas cargadas, usar transacciones directamente
-        const transaccionesConcepto = transacciones.filter(t => t.concepto_id === concepto.id);
+        // Fallback: si no hay cuentas cargadas, usar transacciones directamente (filtradas por cuentas)
+        const idsConCuentasFiltradas = cuentasFiltradas.map(c => c.id);
+        const transaccionesConcepto = transacciones.filter(t => 
+          t.concepto_id === concepto.id && t.cuenta_id !== null && idsConCuentasFiltradas.includes(t.cuenta_id)
+        );
         total = transaccionesConcepto.reduce((sum, t) => {
           const monto = Number(t.monto) || 0;
           return sum + (isFinite(monto) ? monto : 0);
@@ -752,8 +784,8 @@ const DashboardTesoreria: React.FC = () => {
           mensaje: resultado.message
         });
         
-        // Forzar actualización de las transacciones sin recargar la página
-        setForceUpdate(prev => prev + 1);
+        // Actualización completada
+        console.log('✅ Saldos iniciales procesados correctamente');
       }
       
     } catch (error) {
@@ -1031,12 +1063,23 @@ const DashboardTesoreria: React.FC = () => {
         </div>
       </div>
 
+      {/* Filtros */}
+      <FiltrosDashboard
+        bankAccounts={bankAccounts}
+        companiasFiltradas={companiasFiltradas}
+        bancosFiltrados={bancosFiltrados}
+        onCompaniasChange={handleCompaniasChange}
+        onBancosChange={handleBancosChange}
+        onLimpiarFiltros={handleLimpiarFiltros}
+      />
+
       {/* Tabla estilo Excel - SIN fechas, solo compañías y cuentas */}
       <div className="bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg overflow-hidden shadow-lg">
         <div className="overflow-x-auto">
           {(() => {
-            // Expandir cuentas por moneda si está activado el modo multi-moneda
-            const cuentasExpandidas = expandirCuentasPorMoneda(bankAccounts);
+            // Obtener cuentas filtradas y expandir por moneda si está activado el modo multi-moneda
+            const cuentasFiltradas = obtenerCuentasFiltradas();
+            const cuentasExpandidas = expandirCuentasPorMoneda(cuentasFiltradas);
             
             return (
           <table className="w-full border-collapse text-xs">
