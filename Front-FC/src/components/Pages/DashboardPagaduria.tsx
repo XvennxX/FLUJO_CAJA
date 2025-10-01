@@ -12,6 +12,7 @@ import { useDiferenciaSaldos } from '../../hooks/useDiferenciaSaldos';
 import DatePicker from '../Calendar/DatePicker';
 import { useDashboardWebSocket } from '../../hooks/useWebSocket';
 import { CeldaEditable } from '../UI/CeldaEditable';
+import { FiltrosDashboard } from '../Dashboard/FiltrosDashboard';
 
 interface Concepto {
   codigo: string;
@@ -49,6 +50,10 @@ const DashboardPagaduria: React.FC = () => {
   
   // Estado para multi-moneda
   const [usarMultiMoneda, setUsarMultiMoneda] = useState<boolean>(false);
+  
+  // Estados para filtros
+  const [companiasFiltradas, setCompaniasFiltradas] = useState<number[]>([]);
+  const [bancosFiltrados, setBancosFiltrados] = useState<number[]>([]);
   
   // Hook para obtener TRM de la fecha seleccionada
   const { trm, loading: trmLoading, error: trmError, refetch: refetchTRM } = useTRMByDate(selectedDate);
@@ -109,6 +114,35 @@ const DashboardPagaduria: React.FC = () => {
     return convertirMoneda(montoOriginal, tipoMonedaCuenta);
   };
 
+  // Función para filtrar cuentas bancarias
+  const obtenerCuentasFiltradas = (): BankAccount[] => {
+    if (companiasFiltradas.length === 0 && bancosFiltrados.length === 0) {
+      // Si no hay filtros, mostrar todas las cuentas
+      return bankAccounts;
+    }
+    
+    return bankAccounts.filter(account => {
+      const cumpleCompania = companiasFiltradas.length === 0 || companiasFiltradas.includes(account.compania.id);
+      const cumpleBanco = bancosFiltrados.length === 0 || bancosFiltrados.includes(account.banco.id);
+      
+      return cumpleCompania && cumpleBanco;
+    });
+  };
+
+  // Funciones para manejar los filtros
+  const handleCompaniasChange = (nuevasCompanias: number[]) => {
+    setCompaniasFiltradas(nuevasCompanias);
+  };
+
+  const handleBancosChange = (nuevosBancos: number[]) => {
+    setBancosFiltrados(nuevosBancos);
+  };
+
+  const handleLimpiarFiltros = () => {
+    setCompaniasFiltradas([]);
+    setBancosFiltrados([]);
+  };
+
   // Función para convertir conceptos del backend al formato del frontend
   const convertirConceptosParaTabla = (conceptosBackend: ConceptoFlujoCaja[]): Concepto[] => {
     return conceptosBackend.map(concepto => ({
@@ -124,8 +158,14 @@ const DashboardPagaduria: React.FC = () => {
     let total = 0;
     
     if (concepto.id) {
-      // Sumar todas las transacciones de este concepto
-      const transaccionesConcepto = transacciones.filter(t => t.concepto_id === concepto.id);
+      // Obtener IDs de cuentas filtradas para calcular solo sus totales
+      const cuentasFiltradas = obtenerCuentasFiltradas();
+      const idsConCuentasFiltradas = cuentasFiltradas.map(c => c.id);
+      
+      // Sumar solo las transacciones de este concepto que pertenezcan a cuentas filtradas
+      const transaccionesConcepto = transacciones.filter(t => 
+        t.concepto_id === concepto.id && t.cuenta_id !== null && idsConCuentasFiltradas.includes(t.cuenta_id)
+      );
       total = transaccionesConcepto.reduce((sum, t) => sum + t.monto, 0);
     }
     
@@ -457,12 +497,23 @@ const DashboardPagaduria: React.FC = () => {
         </div>
       </div>
 
+      {/* Filtros */}
+      <FiltrosDashboard
+        bankAccounts={bankAccounts}
+        companiasFiltradas={companiasFiltradas}
+        bancosFiltrados={bancosFiltrados}
+        onCompaniasChange={handleCompaniasChange}
+        onBancosChange={handleBancosChange}
+        onLimpiarFiltros={handleLimpiarFiltros}
+      />
+
       {/* Tabla estilo Excel - SIN fechas, solo compañías y cuentas */}
       <div className="bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg overflow-hidden shadow-lg">
         <div className="overflow-x-auto">
           {(() => {
-            // Expandir cuentas por moneda si está activado el modo multi-moneda
-            const cuentasExpandidas = expandirCuentasPorMoneda(bankAccounts);
+            // Obtener cuentas filtradas y expandir por moneda si está activado el modo multi-moneda
+            const cuentasFiltradas = obtenerCuentasFiltradas();
+            const cuentasExpandidas = expandirCuentasPorMoneda(cuentasFiltradas);
             
             return (
           <table className="w-full border-collapse text-xs">
