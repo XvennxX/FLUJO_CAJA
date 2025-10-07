@@ -122,7 +122,7 @@ npm run dev
 -- Crear base de datos
 CREATE DATABASE flujo_caja CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
--- Variables de entorno (.env en Back-FC)
+--  Variables de entorno (.env en Back-FC)
 DB_HOST=localhost
 DB_PORT=3306
 DB_USER=root
