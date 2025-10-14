@@ -15,22 +15,22 @@ def create_trm_table():
     """
     Crea la tabla TRM en la base de datos
     """
-    print("🔄 Creando tabla TRM...")
+    print("[SYNC] Creando tabla TRM...")
     
     try:
         # Crear todas las tablas definidas en Base
         Base.metadata.create_all(bind=engine, tables=[TRM.__table__])
-        print("✅ Tabla TRM creada exitosamente")
+        print("[OK] Tabla TRM creada exitosamente")
         
         # Mostrar información de la tabla
-        print("\n📋 Información de la tabla TRM:")
+        print("\n[LIST] Información de la tabla TRM:")
         print(f"Tabla: {TRM.__tablename__}")
         print("Columnas:")
         for column in TRM.__table__.columns:
             print(f"  - {column.name}: {column.type} {'(PK)' if column.primary_key else ''}")
         
     except Exception as e:
-        print(f"❌ Error al crear tabla TRM: {e}")
+        print(f"[ERROR] Error al crear tabla TRM: {e}")
         return False
     
     return True
@@ -53,7 +53,7 @@ def main():
         print("  - GET /api/v1/trm/range")
         print("  - POST /api/v1/trm/")
     else:
-        print("\n❌ Error en la migración")
+        print("\n[ERROR] Error en la migración")
     
     print("=" * 60)
 

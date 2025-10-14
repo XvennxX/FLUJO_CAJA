@@ -29,26 +29,26 @@ def test_trm_scraper():
     trm_value = scraper.get_current_trm()
     
     if trm_value:
-        print(f"✅ TRM obtenida: {trm_value}")
+        print(f"[OK] TRM obtenida: {trm_value}")
     else:
-        print("❌ No se pudo obtener TRM")
+        print("[ERROR] No se pudo obtener TRM")
     
     # Probar guardar en base de datos
     print("\n2. Probando guardar en base de datos...")
     if trm_value:
         success = scraper.save_trm_to_database(date.today(), trm_value)
         if success:
-            print("✅ TRM guardada en base de datos")
+            print("[OK] TRM guardada en base de datos")
         else:
-            print("❌ Error al guardar TRM en base de datos")
+            print("[ERROR] Error al guardar TRM en base de datos")
     
     # Probar actualización diaria completa
     print("\n3. Probando actualización diaria completa...")
     success = scraper.update_daily_trm()
     if success:
-        print("✅ Actualización diaria exitosa")
+        print("[OK] Actualización diaria exitosa")
     else:
-        print("❌ Error en actualización diaria")
+        print("[ERROR] Error en actualización diaria")
 
 def test_database_operations():
     """
@@ -71,34 +71,34 @@ def test_database_operations():
         # Verificar si ya existe
         existing = db.query(TRM).filter(TRM.fecha == test_trm.fecha).first()
         if existing:
-            print(f"⚠️ Ya existe TRM para {test_trm.fecha}: {existing.valor}")
+            print(f"[WARNING] Ya existe TRM para {test_trm.fecha}: {existing.valor}")
         else:
             db.add(test_trm)
             db.commit()
-            print(f"✅ TRM de prueba insertada: {test_trm.fecha} = {test_trm.valor}")
+            print(f"[OK] TRM de prueba insertada: {test_trm.fecha} = {test_trm.valor}")
         
         # Consultar TRMs existentes
         print("\n2. Consultando TRMs existentes...")
         trms = db.query(TRM).order_by(TRM.fecha.desc()).limit(5).all()
         
         if trms:
-            print("📊 Últimas 5 TRMs:")
+            print("[DATA] Últimas 5 TRMs:")
             for trm in trms:
                 print(f"  {trm.fecha}: {trm.valor}")
         else:
-            print("⚠️ No hay TRMs en la base de datos")
+            print("[WARNING] No hay TRMs en la base de datos")
         
         # Consultar TRM más reciente
         print("\n3. Consultando TRM más reciente...")
         latest_trm = db.query(TRM).order_by(TRM.fecha.desc()).first()
         
         if latest_trm:
-            print(f"✅ TRM más reciente: {latest_trm.fecha} = {latest_trm.valor}")
+            print(f"[OK] TRM más reciente: {latest_trm.fecha} = {latest_trm.valor}")
         else:
-            print("⚠️ No hay TRM más reciente")
+            print("[WARNING] No hay TRM más reciente")
             
     except Exception as e:
-        print(f"❌ Error en operaciones de base de datos: {e}")
+        print(f"[ERROR] Error en operaciones de base de datos: {e}")
         db.rollback()
     finally:
         db.close()
@@ -130,9 +130,9 @@ def test_manual_trm_values():
             if not existing:
                 trm = TRM(fecha=fecha, valor=valor)
                 db.add(trm)
-                print(f"✅ Insertada: {fecha} = {valor}")
+                print(f"[OK] Insertada: {fecha} = {valor}")
             else:
-                print(f"⚠️ Ya existe: {fecha} = {existing.valor}")
+                print(f"[WARNING] Ya existe: {fecha} = {existing.valor}")
         
         db.commit()
         
@@ -140,12 +140,12 @@ def test_manual_trm_values():
         print("\n2. Verificando datos insertados...")
         all_trms = db.query(TRM).order_by(TRM.fecha.desc()).limit(10).all()
         
-        print("📊 TRMs en base de datos:")
+        print("[DATA] TRMs en base de datos:")
         for trm in all_trms:
             print(f"  {trm.fecha}: {trm.valor} (creada: {trm.fecha_creacion})")
             
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"[ERROR] Error: {e}")
         db.rollback()
     finally:
         db.close()
@@ -154,7 +154,7 @@ def main():
     """
     Función principal de pruebas
     """
-    print("🚀 INICIANDO PRUEBAS DE FUNCIONALIDAD TRM")
+    print("[INFO] INICIANDO PRUEBAS DE FUNCIONALIDAD TRM")
     
     # Ejecutar pruebas
     test_manual_trm_values()
@@ -164,7 +164,7 @@ def main():
     try:
         test_trm_scraper()
     except Exception as e:
-        print(f"\n⚠️ Saltando pruebas de scraper (sin conexión o error): {e}")
+        print(f"\n[WARNING] Saltando pruebas de scraper (sin conexión o error): {e}")
     
     print("\n" + "=" * 60)
     print("🎉 PRUEBAS COMPLETADAS")

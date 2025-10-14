@@ -215,7 +215,7 @@ class DiasHabilesService:
         if es_festivo:
             festivo = self.db.query(DiaFestivo).filter(
                 DiaFestivo.fecha == fecha,
-                DiaFestivo.activo == True
+                DiaFestivo.activo == 1
             ).first()
             if festivo:
                 festivo_info = festivo.to_dict()

@@ -280,7 +280,7 @@ class DependenciasFlujoCajaService:
                 ConceptoFlujoCaja.depende_de_concepto_id.isnot(None),
                 ConceptoFlujoCaja.formula_dependencia.isnot(None)
             ),
-            ConceptoFlujoCaja.activo == True,
+            ConceptoFlujoCaja.activo == 1,
             or_(
                 ConceptoFlujoCaja.area == area_concepto, 
                 ConceptoFlujoCaja.area == AreaConcepto.ambas

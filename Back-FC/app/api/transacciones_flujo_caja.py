@@ -23,8 +23,10 @@ from ..schemas.flujo_caja import (
 )
 from ..services.transaccion_flujo_caja_service import TransaccionFlujoCajaService
 from ..services.dependencias_flujo_caja_service import DependenciasFlujoCajaService
+from ..services.concepto_flujo_caja_service import ConceptoFlujoCajaService
 from ..api.auth import get_current_user
 from ..core.websocket import websocket_manager
+import asyncio
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/transacciones-flujo-caja", tags=["Transacciones Flujo de Caja"])
@@ -146,6 +148,59 @@ def obtener_transaccion(
     
     return transaccion
 
+@router.put("/{transaccion_id}/quick", response_model=TransaccionFlujoCajaResponse)
+async def actualizar_transaccion_rapida(
+    transaccion_id: int,
+    transaccion_data: TransaccionFlujoCajaUpdate,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """🚀 OPTIMIZADO: Actualizar transacción con respuesta inmediata"""
+    logger.info(f"🚀 API PUT RÁPIDO /transacciones/{transaccion_id}/quick LLAMADO")
+    logger.info(f"📋 Datos: {transaccion_data.model_dump()}")
+    
+    try:
+        # Validación rápida de concepto auto-calculado
+        service = TransaccionFlujoCajaService(db)
+        transaccion_existente = service.obtener_transaccion_por_id(transaccion_id)
+        
+        if not transaccion_existente:
+            raise HTTPException(status_code=404, detail="Transacción no encontrada")
+        
+        # Verificar si es auto-calculado
+        concepto_service = ConceptoFlujoCajaService(db)
+        concepto = concepto_service.obtener_concepto_por_id(transaccion_existente.concepto_id)
+        
+        if concepto and concepto.es_auto_calculado:
+            raise HTTPException(
+                status_code=400, 
+                detail="No se puede modificar un concepto auto-calculado"
+            )
+        
+        # Actualización SOLO de la transacción (sin dependencias inmediatas)
+        transaccion = service.actualizar_transaccion_simple(transaccion_id, transaccion_data, current_user.id)
+        
+        # Programar procesamiento de dependencias en background
+        from app.services.optimized_transaction_service import optimized_service
+        asyncio.create_task(
+            optimized_service.procesar_dependencias_async(
+                transaccion.fecha,
+                transaccion.concepto_id,
+                transaccion.cuenta_id,
+                current_user.id,
+                db
+            )
+        )
+        
+        logger.info(f"✅ Transacción {transaccion_id} actualizada INMEDIATAMENTE")
+        return transaccion
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error en actualización rápida: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.put("/{transaccion_id}", response_model=TransaccionFlujoCajaResponse)
 async def actualizar_transaccion(
     transaccion_id: int,
@@ -153,7 +208,7 @@ async def actualizar_transaccion(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
-    """Actualizar una transacción existente"""
+    """Actualizar una transacción existente (método completo tradicional)"""
     logger.info(f"🚨🚨🚨 API PUT /transacciones/{transaccion_id} LLAMADO 🚨🚨🚨")
     logger.info(f"📋 Datos recibidos: {transaccion_data.model_dump()}")
     logger.info(f"👤 Usuario: {current_user.id if hasattr(current_user, 'id') else 'Unknown'}")

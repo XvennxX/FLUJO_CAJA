@@ -641,30 +641,15 @@ const DashboardTesoreria: React.FC = () => {
   // Función para calcular el SALDO FINAL CUENTAS del día anterior (para usar como SALDO INICIAL del día actual)
   const calculateSaldoInicialDesdeDiaAnterior = (cuentaId?: number) => {
     try {
-      console.log('🔍 Calculando saldo inicial desde día anterior...', {
-        fechaSeleccionada: selectedDate,
-        cuentaId: cuentaId || 'todas',
-        tieneTransaccionesDiaAnterior: !!transaccionesDiaAnterior,
-        cantidadTransacciones: transaccionesDiaAnterior?.length || 0
-      });
-
       // Si no hay transacciones del día anterior, el saldo inicial es 0
       if (!transaccionesDiaAnterior || transaccionesDiaAnterior.length === 0) {
-        console.log('❌ No hay transacciones del día anterior, saldo inicial = 0');
         return 0;
       }
 
       // Buscar el concepto "SALDO FINAL CUENTAS" 
       const saldoFinalCuentasConcepto = conceptos.find(c => c.nombre === 'SALDO FINAL CUENTAS');
       
-      console.log('🎯 Buscando concepto SALDO FINAL CUENTAS:', {
-        conceptoEncontrado: !!saldoFinalCuentasConcepto,
-        conceptoId: saldoFinalCuentasConcepto?.id,
-        todosLosConceptos: conceptos.map(c => ({ id: c.id, nombre: c.nombre }))
-      });
-      
       if (!saldoFinalCuentasConcepto) {
-        console.warn('❌ No se encontró el concepto SALDO FINAL CUENTAS');
         return 0;
       }
 
@@ -675,34 +660,14 @@ const DashboardTesoreria: React.FC = () => {
         (cuentaId ? t.cuenta_id === cuentaId : true)
       );
 
-      console.log('📊 Transacciones SALDO FINAL CUENTAS del día anterior:', {
-        conceptoId: saldoFinalCuentasConcepto.id,
-        transaccionesEncontradas: transaccionesSaldoFinal.length,
-        transacciones: transaccionesSaldoFinal.map(t => ({
-          id: t.id,
-          monto: t.monto,
-          cuenta_id: t.cuenta_id,
-          fecha: t.fecha
-        }))
-      });
-
       // Sumar los montos de SALDO FINAL CUENTAS del día anterior
       const saldoFinalDiaAnterior = transaccionesSaldoFinal.reduce((sum, t) => {
         const monto = Number(t.monto) || 0;
-        console.log(`  💰 Sumando transacción ID ${t.id}: ${monto}`);
         return sum + monto;
       }, 0);
 
-      console.log('✅ Saldo inicial calculado desde SALDO FINAL CUENTAS del día anterior:', {
-        conceptoId: saldoFinalCuentasConcepto.id,
-        cuentaId: cuentaId || 'todas',
-        transaccionesEncontradas: transaccionesSaldoFinal.length,
-        saldoFinalDiaAnterior
-      });
-
       // Si el resultado es NaN, undefined, null o no es un número válido, devolver 0
       if (isNaN(saldoFinalDiaAnterior) || !isFinite(saldoFinalDiaAnterior)) {
-        console.warn('❌ Resultado inválido, devolviendo 0');
         return 0;
       }
 
@@ -803,18 +768,8 @@ const DashboardTesoreria: React.FC = () => {
         return 0;
       }
       
-      // Debug para SALDO INICIAL
-      if (conceptoId === 1) {
-        console.log('🔍 DEBUG SALDO INICIAL:', { conceptoId, cuentaId, selectedDate });
-      }
-      
       // Obtener el monto original con conversión de moneda
       const montoOriginal = obtenerMontoConConversion(conceptoId, cuentaId, tipoMonedaCuenta);
-      
-      // Debug para SALDO INICIAL
-      if (conceptoId === 1) {
-        console.log('📊 Monto obtenido:', montoOriginal);
-      }
       
       // Validar que el monto sea un número válido
       if (!isFinite(montoOriginal) || isNaN(montoOriginal)) {
@@ -1051,12 +1006,12 @@ const DashboardTesoreria: React.FC = () => {
             </button>
           </div>
           
-          <button className="flex items-center space-x-2 px-3 py-2 bg-bolivar-600 text-white rounded-lg hover:bg-bolivar-700 transition-colors text-sm">
+          <button className="session-activity flex items-center space-x-2 px-3 py-2 bg-bolivar-600 text-white rounded-lg hover:bg-bolivar-700 transition-colors text-sm">
             <RefreshCw className="h-4 w-4" />
             <span>Actualizar</span>
           </button>
           
-          <button className="flex items-center space-x-2 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm">
+          <button className="session-activity flex items-center space-x-2 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm">
             <Download className="h-4 w-4" />
             <span>Exportar</span>
           </button>
@@ -1310,10 +1265,8 @@ const DashboardTesoreria: React.FC = () => {
                     // CORREGIDO: Sumar el SUB-TOTAL TESORERÍA de cada cuenta individual
                     const totalSubtotal = bankAccounts.reduce((sum, account) => {
                       const subtotalCuenta = calculateSubtotalTesoreria(account.id);
-                      console.log(`🧮 SUB-TOTAL TESORERÍA - Cuenta ${account.numero_cuenta}: ${subtotalCuenta}`);
                       return sum + (Number(subtotalCuenta) || 0);
                     }, 0);
-                    console.log(`🎯 SUB-TOTAL TESORERÍA - TOTAL CALCULADO: ${totalSubtotal}`);
                     
                     const totalValido = !isNaN(totalSubtotal) && isFinite(totalSubtotal) ? totalSubtotal : 0;
                     
@@ -1357,10 +1310,8 @@ const DashboardTesoreria: React.FC = () => {
                     // CORREGIDO: Sumar el SALDO FINAL CUENTAS de cada cuenta individual
                     const totalSaldoFinal = bankAccounts.reduce((sum, account) => {
                       const saldoFinalCuenta = calculateSaldoFinalCuentas(account.id);
-                      console.log(`🧮 SALDO FINAL CUENTAS - Cuenta ${account.numero_cuenta}: ${saldoFinalCuenta}`);
                       return sum + (Number(saldoFinalCuenta) || 0);
                     }, 0);
-                    console.log(`🎯 SALDO FINAL CUENTAS - TOTAL CALCULADO: ${totalSaldoFinal}`);
                     
                     return totalSaldoFinal !== 0 ? (
                       <span className={`font-bold ${totalSaldoFinal < 0 ? 'text-red-700 dark:text-red-400' : 'text-green-700 dark:text-green-400'}`}>

@@ -30,6 +30,9 @@ export const useTransaccionesFlujoCaja = (fecha: string, area: 'tesoreria' | 'pa
   const [transacciones, setTransacciones] = useState<TransaccionFlujoCaja[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  
+  // 🚀 Cache para evitar recarga innecesaria
+  const [lastFetchKey, setLastFetchKey] = useState<string>('');
 
   // Obtener token de autenticación
   const getAuthHeaders = () => {
@@ -43,6 +46,13 @@ export const useTransaccionesFlujoCaja = (fecha: string, area: 'tesoreria' | 'pa
   // Cargar transacciones para una fecha y área específica
   const cargarTransacciones = useCallback(async () => {
     if (!fecha) return;
+    
+    // 🚀 OPTIMIZACIÓN: Evitar recarga si no hay cambios
+    const fetchKey = `${fecha}-${area}`;
+    if (fetchKey === lastFetchKey && transacciones.length > 0) {
+      console.log('🚀 CACHE: Evitando recarga innecesaria de transacciones');
+      return;
+    }
     
     try {
       setLoading(true);
@@ -58,6 +68,7 @@ export const useTransaccionesFlujoCaja = (fecha: string, area: 'tesoreria' | 'pa
       if (response.ok) {
         const data = await response.json();
         setTransacciones(data);
+        setLastFetchKey(fetchKey); // 🚀 Actualizar cache key
       } else {
         const errorData = await response.json().catch(() => ({}));
         const errorMessage = typeof errorData === 'string' 
@@ -108,7 +119,7 @@ export const useTransaccionesFlujoCaja = (fecha: string, area: 'tesoreria' | 'pa
         };
 
         const response = await fetch(
-          `http://localhost:8000/api/v1/api/transacciones-flujo-caja/${transaccionExistente.id}`,
+          `http://localhost:8000/api/v1/api/transacciones-flujo-caja/${transaccionExistente.id}/quick`,
           {
             method: 'PUT',
             headers: getAuthHeaders(),
@@ -126,7 +137,14 @@ export const useTransaccionesFlujoCaja = (fecha: string, area: 'tesoreria' | 'pa
         if (response.ok) {
           const responseData = await response.json().catch(() => null);
           console.log('✅ Datos de respuesta PUT:', responseData);
-          await cargarTransacciones(); // Recargar datos
+          
+          // 🚀 OPTIMIZACIÓN: Actualización optimista sin recargar todo
+          setTransacciones(prev => prev.map(t => 
+            t.id === transaccionExistente.id 
+              ? { ...t, monto: monto, descripcion: updateData.descripcion }
+              : t
+          ));
+          
           return true;
         } else {
           const errorData = await response.json().catch(() => ({}));
@@ -172,7 +190,12 @@ export const useTransaccionesFlujoCaja = (fecha: string, area: 'tesoreria' | 'pa
         if (response.ok) {
           const responseData = await response.json().catch(() => null);
           console.log('✅ Datos de respuesta POST:', responseData);
-          await cargarTransacciones(); // Recargar datos
+          
+          // 🚀 OPTIMIZACIÓN: Agregar nueva transacción al estado existente
+          if (responseData) {
+            setTransacciones(prev => [...prev, responseData]);
+          }
+          
           return true;
         } else {
           const errorData = await response.json().catch(() => ({}));

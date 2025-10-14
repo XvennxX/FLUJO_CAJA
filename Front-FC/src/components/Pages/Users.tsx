@@ -4,6 +4,7 @@ import { useAuditoria } from '../../hooks/useAuditoria';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../hooks/useToast';
 import CreateUserModal from './CreateUserModal';
+import EditUserModal from './EditUserModal';
 import ConfirmModal from './ConfirmModal';
 import ToastContainer from '../Layout/ToastContainer';
 
@@ -29,6 +30,8 @@ const Users: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [selectedUserToEdit, setSelectedUserToEdit] = useState<User | null>(null);
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
   const [confirmModalData, setConfirmModalData] = useState<{
     user: User | null;
@@ -130,8 +133,27 @@ const Users: React.FC = () => {
       `Solicitó editar el usuario: ${user.name}`,
       user.id
     );
-    // Aquí iría la lógica para abrir modal de edición
-    alert(`Funcionalidad de editar usuario "${user.name}" en desarrollo`);
+    setSelectedUserToEdit(user);
+    setIsEditModalOpen(true);
+  };
+
+  const handleCloseEditModal = () => {
+    setIsEditModalOpen(false);
+    setSelectedUserToEdit(null);
+  };
+
+  const handleUserUpdated = () => {
+    fetchUsers(); // Recargar la lista de usuarios
+    setIsEditModalOpen(false);
+    setSelectedUserToEdit(null);
+    
+    // Mostrar toast de éxito
+    addToast({
+      type: 'success',
+      title: 'Usuario Actualizado',
+      message: 'El usuario ha sido actualizado exitosamente',
+      duration: 4000
+    });
   };
 
   const handleToggleUserStatus = async (user: User) => {
@@ -571,6 +593,14 @@ const Users: React.FC = () => {
         isOpen={isCreateModalOpen}
         onClose={handleCloseCreateModal}
         onUserCreated={handleUserCreated}
+      />
+
+      {/* Edit User Modal */}
+      <EditUserModal
+        isOpen={isEditModalOpen}
+        onClose={handleCloseEditModal}
+        onUserUpdated={handleUserUpdated}
+        user={selectedUserToEdit}
       />
 
       {/* Confirm Modal */}

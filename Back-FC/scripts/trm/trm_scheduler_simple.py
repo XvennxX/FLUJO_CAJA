@@ -55,11 +55,11 @@ def check_missing_trm():
                     logger.info(f"TRM faltante para {check_date}, actualizando...")
                     success = scraper.update_daily_trm(check_date)
                     if success:
-                        logger.info(f"✅ TRM actualizada para {check_date}")
+                        logger.info(f"[OK] TRM actualizada para {check_date}")
                     else:
-                        logger.warning(f"❌ No se pudo actualizar TRM para {check_date}")
+                        logger.warning(f"[ERROR] No se pudo actualizar TRM para {check_date}")
                 else:
-                    logger.info(f"✅ TRM ya existe para {check_date}: {existing_trm.valor}")
+                    logger.info(f"[OK] TRM ya existe para {check_date}: {existing_trm.valor}")
                         
             finally:
                 db.close()

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { formatCurrency } from '../../utils/formatters';
 import { esConceptoAutoCalculado } from '../../utils/conceptos';
+import { useActivityTracker } from '../../contexts/SessionContext';
 
 interface CeldaEditableProps {
   valor: number;
@@ -21,6 +22,7 @@ export const CeldaEditable: React.FC<CeldaEditableProps> = ({
   onGuardar,
   disabled = false
 }) => {
+  const { trackDashboardEdit, trackDataSave } = useActivityTracker();
   const [isEditing, setIsEditing] = useState(false);
   const [inputValue, setInputValue] = useState('');
   const [isSaving, setIsSaving] = useState(false);
@@ -158,26 +160,34 @@ export const CeldaEditable: React.FC<CeldaEditableProps> = ({
         return;
       }
 
+      // 🚀 OPTIMIZACIÓN: Salir del modo edición inmediatamente para feedback visual
+      setIsEditing(false);
       setIsSaving(true);
       console.log('🚀 Llamando onGuardar con valor:', nuevoValor);
+      
+      // 👤 Registrar actividad de edición
+      trackDashboardEdit(`Concepto ID: ${conceptoId}`, nuevoValor);
       
       const success = await onGuardar(conceptoId, cuentaId, nuevoValor, companiaId);
       
       console.log('📝 Resultado de onGuardar:', success);
       
       if (success) {
-        setIsEditing(false);
         setHasError(false);
         console.log('✅ Guardado exitoso');
+        // 👤 Registrar actividad de guardado exitoso
+        trackDataSave('Transacción Dashboard');
       } else {
         setHasError(true);
         console.error('❌ onGuardar retornó false');
-        // Mantener el modo de edición para permitir correcciones
+        // Reabrir edición solo en caso de error
+        setIsEditing(true);
       }
     } catch (error) {
       console.error('❌ Error en handleSave:', error);
       setHasError(true);
-      // Mantener el modo de edición para permitir correcciones
+      // Reabrir edición solo en caso de error
+      setIsEditing(true);
     } finally {
       setIsSaving(false);
     }

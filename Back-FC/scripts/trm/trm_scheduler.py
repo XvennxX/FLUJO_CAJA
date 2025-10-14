@@ -43,9 +43,9 @@ def job_update_trm():
         success = scraper.update_daily_trm(today)
         
         if success:
-            logger.info(f"✅ TRM actualizada exitosamente para {today}")
+            logger.info(f"[OK] TRM actualizada exitosamente para {today}")
         else:
-            logger.error(f"❌ Error al actualizar TRM para {today}")
+            logger.error(f"[ERROR] Error al actualizar TRM para {today}")
             
             # Intentar obtener TRM del día siguiente (ya que a las 6 PM sale la del día siguiente)
             tomorrow = date.today().replace(day=date.today().day + 1)
@@ -53,12 +53,12 @@ def job_update_trm():
             
             success_tomorrow = scraper.update_daily_trm(tomorrow)
             if success_tomorrow:
-                logger.info(f"✅ TRM del día siguiente actualizada exitosamente para {tomorrow}")
+                logger.info(f"[OK] TRM del día siguiente actualizada exitosamente para {tomorrow}")
             else:
-                logger.error(f"❌ Error al actualizar TRM del día siguiente para {tomorrow}")
+                logger.error(f"[ERROR] Error al actualizar TRM del día siguiente para {tomorrow}")
         
     except Exception as e:
-        logger.error(f"❌ Error inesperado en la actualización de TRM: {e}")
+        logger.error(f"[ERROR] Error inesperado en la actualización de TRM: {e}")
     
     logger.info("=" * 50)
     logger.info("FINALIZADA ACTUALIZACIÓN AUTOMÁTICA DE TRM")
@@ -68,26 +68,26 @@ def job_test_connection():
     """
     Trabajo de prueba para verificar conectividad
     """
-    logger.info("🔄 Verificando conectividad...")
+    logger.info("[SYNC] Verificando conectividad...")
     
     try:
         scraper = TRMScraper()
         trm = scraper.get_current_trm()
         
         if trm:
-            logger.info(f"✅ Conexión exitosa. TRM actual: {trm}")
+            logger.info(f"[OK] Conexión exitosa. TRM actual: {trm}")
         else:
-            logger.warning("⚠️ No se pudo obtener TRM, pero la conexión funciona")
+            logger.warning("[WARNING] No se pudo obtener TRM, pero la conexión funciona")
             
     except Exception as e:
-        logger.error(f"❌ Error en verificación de conectividad: {e}")
+        logger.error(f"[ERROR] Error en verificación de conectividad: {e}")
 
 def main():
     """
     Función principal del scheduler
     """
-    logger.info("🚀 INICIANDO SERVICIO DE AUTOMATIZACIÓN TRM")
-    logger.info("⏰ Programado para ejecutarse diariamente a las 15:15 (3:15 PM)")
+    logger.info("[INFO] INICIANDO SERVICIO DE AUTOMATIZACIÓN TRM")
+    logger.info("[TIME] Programado para ejecutarse diariamente a las 15:15 (3:15 PM)")
     
     # Programar trabajos
     schedule.every().day.at("15:15").do(job_update_trm)
@@ -100,7 +100,7 @@ def main():
     schedule.every().hour.do(job_test_connection)
     
     # Ejecutar una vez al iniciar para verificar que todo funciona
-    logger.info("🔄 Ejecutando verificación inicial...")
+    logger.info("[SYNC] Ejecutando verificación inicial...")
     job_test_connection()
     
     # Loop principal
@@ -115,7 +115,7 @@ def main():
             logger.info("🛑 Servicio detenido por usuario")
             break
         except Exception as e:
-            logger.error(f"❌ Error en el loop principal: {e}")
+            logger.error(f"[ERROR] Error en el loop principal: {e}")
             time.sleep(300)  # Esperar 5 minutos antes de reintentar
 
 if __name__ == "__main__":

@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     # Security
     secret_key: str = os.getenv("SECRET_KEY", "your-secret-key-here")
     algorithm: str = os.getenv("ALGORITHM", "HS256")
-    access_token_expire_minutes: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
+    access_token_expire_minutes: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "120"))  # 2 horas para coincidir con frontend
     
     # CORS
     allowed_origins: list = ["http://localhost:5000", "http://127.0.0.1:5000"]

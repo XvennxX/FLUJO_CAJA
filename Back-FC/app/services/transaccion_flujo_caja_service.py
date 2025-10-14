@@ -83,7 +83,7 @@ class TransaccionFlujoCajaService:
         # Validar que el concepto existe y está activo
         concepto = self.db.query(ConceptoFlujoCaja).filter(
             ConceptoFlujoCaja.id == transaccion_data.concepto_id,
-            ConceptoFlujoCaja.activo == True
+            ConceptoFlujoCaja.activo == 1
         ).first()
         
         if not concepto:
@@ -257,7 +257,7 @@ class TransaccionFlujoCajaService:
         
         # Obtener conceptos del área ordenados
         conceptos_query = self.db.query(ConceptoFlujoCaja).filter(
-            ConceptoFlujoCaja.activo == True
+            ConceptoFlujoCaja.activo == 1
         )
         
         if area != AreaConceptoSchema.ambas:
@@ -359,7 +359,7 @@ class TransaccionFlujoCajaService:
         
         conceptos_dependientes = self.db.query(ConceptoFlujoCaja).filter(
             ConceptoFlujoCaja.depende_de_concepto_id.isnot(None),
-            ConceptoFlujoCaja.activo == True,
+            ConceptoFlujoCaja.activo == 1,
             or_(ConceptoFlujoCaja.area == area_concepto, ConceptoFlujoCaja.area == AreaConcepto.ambas)
         ).all()
         
@@ -469,6 +469,49 @@ class TransaccionFlujoCajaService:
         })
         transaccion.auditoria = auditoria_actual
         
+        self.db.commit()
+        self.db.refresh(transaccion)
+        
+        return transaccion
+    
+    def actualizar_transaccion_simple(
+        self, 
+        transaccion_id: int, 
+        transaccion_data: TransaccionFlujoCajaUpdate, 
+        usuario_id: int
+    ) -> TransaccionFlujoCaja:
+        """🚀 OPTIMIZADO: Actualiza transacción SIN procesar dependencias inmediatamente"""
+        
+        # Buscar la transacción
+        transaccion = self.db.query(TransaccionFlujoCaja).filter(
+            TransaccionFlujoCaja.id == transaccion_id
+        ).first()
+        
+        if not transaccion:
+            raise ValueError("Transacción no encontrada")
+        
+        # Guardar valores anteriores para auditoría
+        valores_anteriores = {
+            "monto": float(transaccion.monto),
+            "descripcion": transaccion.descripcion,
+        }
+        
+        # Actualizar campos SOLO
+        for field, value in transaccion_data.dict(exclude_unset=True).items():
+            setattr(transaccion, field, value)
+        
+        # Auditoría mínima
+        auditoria_actual = transaccion.auditoria or {}
+        auditoria_actual.update({
+            "accion": "actualizacion_rapida",
+            "usuario_id": usuario_id,
+            "timestamp": datetime.now().isoformat(),
+            "valores_anteriores": valores_anteriores,
+            "nota": "Actualización optimizada - dependencias en proceso"
+        })
+        transaccion.auditoria = auditoria_actual
+        
+        # Commit inmediato
         self.db.commit()
         self.db.refresh(transaccion)
         
