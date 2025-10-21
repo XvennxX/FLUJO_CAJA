@@ -24,6 +24,7 @@ from ..schemas.flujo_caja import (
 from ..services.transaccion_flujo_caja_service import TransaccionFlujoCajaService
 from ..services.dependencias_flujo_caja_service import DependenciasFlujoCajaService
 from ..services.concepto_flujo_caja_service import ConceptoFlujoCajaService
+from ..core.concepto_utils import es_concepto_auto_calculado
 from ..api.auth import get_current_user
 from ..core.websocket import websocket_manager
 import asyncio
@@ -171,7 +172,8 @@ async def actualizar_transaccion_rapida(
         concepto_service = ConceptoFlujoCajaService(db)
         concepto = concepto_service.obtener_concepto_por_id(transaccion_existente.concepto_id)
         
-        if concepto and concepto.es_auto_calculado:
+        # Determinar si es auto-calculado usando la función utilitaria
+        if concepto and es_concepto_auto_calculado(concepto):
             raise HTTPException(
                 status_code=400, 
                 detail="No se puede modificar un concepto auto-calculado"

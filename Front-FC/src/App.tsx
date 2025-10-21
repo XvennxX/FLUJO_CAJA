@@ -27,7 +27,7 @@ import SessionToast from './components/Session/SessionToast';
 const AppContent: React.FC = () => {
   const { user, isLoading } = useAuth();
   const { trackPageNavigation } = useActivityTracker();
-  const [currentPage, setCurrentPage] = useState('dashboard');
+  const [currentPage, setCurrentPage] = useState('panel');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   // Manejar cambio de página con seguimiento de actividad
@@ -180,6 +180,9 @@ const AppContent: React.FC = () => {
       case 'admin':
         return <AdminPanel />;
       default:
+        if (user?.role === 'administrador') {
+          return <DashboardAdmin />;
+        }
         if (user?.role === 'pagaduria') {
           return <DashboardPagaduria />;
         }

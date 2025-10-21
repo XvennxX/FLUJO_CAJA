@@ -83,13 +83,14 @@ const DashboardTesoreria: React.FC = () => {
     guardarTransaccion,
     obtenerMonto,
     cargarTransacciones,
+    recargarTransaccionesCompleto, // Nueva función para recarga forzada
     setError: setTransaccionesError
   } = useTransaccionesFlujoCaja(selectedDate, 'tesoreria');
   
   // 🔄 WebSocket para actualizaciones en tiempo real
   useDashboardWebSocket('tesoreria', () => {
     console.log('🔄 [TESORERÍA] Recargando datos por WebSocket...');
-    cargarTransacciones();
+    recargarTransaccionesCompleto(); // Usar recarga forzada para WebSocket también
   });
   
   // Función para conversión de moneda
@@ -200,6 +201,12 @@ const DashboardTesoreria: React.FC = () => {
         return 0;
       }
       
+      // Si no hay código definido (null, undefined, o string vacío), devolver el valor original
+      // Esto es importante para conceptos calculados que ya tienen el signo correcto en BD
+      if (!codigo || codigo.trim() === '') {
+        return valor; // Retornar valor original con su signo tal como está en BD
+      }
+      
       // Convertir a número absoluto primero para evitar doble negativos
       const valorAbsoluto = Math.abs(valor);
       
@@ -210,8 +217,8 @@ const DashboardTesoreria: React.FC = () => {
           return valorAbsoluto;
         case 'N': // Neutro - siempre positivos
           return valorAbsoluto;
-        default: // Sin código o cualquier otro - siempre positivos
-          return valorAbsoluto;
+        default: // Para cualquier otro código no reconocido, devolver valor original
+          return valor;
       }
     } catch (error) {
       console.error('Error en aplicarSignoSegunCodigo:', error);
@@ -828,13 +835,37 @@ const DashboardTesoreria: React.FC = () => {
         companiaId
       });
       
-      // OPCIÓN 1: Respetar el valor que ingresa el usuario sin modificar el signo
-      // El usuario es responsable de ingresar el signo correcto
-      const montoFinal = monto;
+      // 🔧 CORRECCIÓN: Aplicar lógica de signos según el código del concepto
+      // Para conceptos con código definido (E, I, N), aplicar lógica automática
+      // Para conceptos sin código, respetar el valor ingresado
+      let montoFinal = monto;
+      
+      if (concepto.codigo && concepto.codigo.trim() !== '') {
+        // Aplicar lógica de signos automática para conceptos con código
+        montoFinal = aplicarSignoSegunCodigo(Math.abs(monto), concepto.codigo);
+        console.log('🔧 Signo aplicado automáticamente:', {
+          concepto: concepto.nombre,
+          montoOriginal: monto,
+          montoAbsoluto: Math.abs(monto),
+          codigo: concepto.codigo,
+          montoFinal: montoFinal,
+          razon: 'Concepto tiene código definido',
+          logicaAplicada: concepto.codigo === 'E' ? 'Egreso → Negativo' : 
+                         concepto.codigo === 'I' ? 'Ingreso → Positivo' : 
+                         concepto.codigo === 'N' ? 'Neutro → Positivo' : 'Código desconocido'
+        });
+      } else {
+        // Para conceptos sin código, respetar el valor ingresado por el usuario
+        montoFinal = monto;
+        console.log('✋ Valor respetado tal como ingresó el usuario:', {
+          monto: montoFinal,
+          razon: 'Concepto sin código definido'
+        });
+      }
       
       console.log('📤 Enviando al backend:', {
         montoFinal,
-        sinModificacion: true
+        aplicacionSignos: concepto.codigo ? 'automática' : 'manual'
       });
       
       // Llamar a la función original con el monto sin modificar
@@ -857,6 +888,11 @@ const DashboardTesoreria: React.FC = () => {
           concepto: concepto.nombre,
           monto: montoFinal
         });
+        
+        // 🔄 SOLUCIÓN: Forzar recarga completa para obtener valores auto-calculados actualizados
+        console.log('🔄 Recargando transacciones para obtener auto-cálculos actualizados...');
+        await recargarTransaccionesCompleto(); // Usar la función específica para recarga forzada
+        console.log('✅ Transacciones recargadas exitosamente');
       }
       
       return resultado;

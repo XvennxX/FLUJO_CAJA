@@ -143,6 +143,137 @@ const DashboardPagaduria: React.FC = () => {
     setBancosFiltrados([]);
   };
 
+  // Función helper para validar y limpiar valores numéricos
+  const safeNumericValue = (value: any): number => {
+    if (typeof value === 'number' && isFinite(value) && !isNaN(value)) {
+      return value;
+    }
+    console.warn('Valor no válido detectado:', value, 'tipo:', typeof value);
+    return 0;
+  };
+
+  // Función para aplicar signo correcto basado en el código del concepto
+  const aplicarSignoSegunCodigo = (valor: number, codigo: string): number => {
+    try {
+      // Validar que el valor sea un número válido
+      if (!isFinite(valor) || isNaN(valor)) {
+        console.warn('Valor no válido en aplicarSignoSegunCodigo:', valor);
+        return 0;
+      }
+      
+      // Si no hay código definido (null, undefined, o string vacío), devolver el valor original
+      // Esto es importante para conceptos calculados que ya tienen el signo correcto en BD
+      if (!codigo || codigo.trim() === '') {
+        return valor; // Retornar valor original con su signo tal como está en BD
+      }
+      
+      // Convertir a número absoluto primero para evitar doble negativos
+      const valorAbsoluto = Math.abs(valor);
+      
+      switch (codigo?.toUpperCase()) {
+        case 'E': // Egresos - siempre negativos
+          return -valorAbsoluto;
+        case 'I': // Ingresos - siempre positivos
+          return valorAbsoluto;
+        case 'N': // Neutro - siempre positivos
+          return valorAbsoluto;
+        default: // Para cualquier otro código no reconocido, devolver valor original
+          return valor;
+      }
+    } catch (error) {
+      console.error('Error en aplicarSignoSegunCodigo:', error);
+      return 0;
+    }
+  };
+
+  // Función wrapper para guardar transacciones aplicando la lógica de signos automáticos
+  const guardarTransaccionConSignos = async (
+    conceptoId: number, 
+    cuentaId: number | null, 
+    monto: number, 
+    companiaId?: number
+  ): Promise<boolean> => {
+    try {
+      // Buscar el concepto para obtener su código
+      const concepto = conceptos.find(c => c.id === conceptoId);
+      
+      if (!concepto) {
+        console.error('❌ No se encontró el concepto con ID:', conceptoId);
+        return false;
+      }
+      
+      console.log('💰 [PAGADURÍA] Guardando transacción:', {
+        concepto: concepto.nombre,
+        codigo: concepto.codigo,
+        montoIngresado: monto,
+        conceptoId,
+        cuentaId,
+        companiaId
+      });
+      
+      // 🔧 CORRECCIÓN: Aplicar lógica de signos según el código del concepto
+      // Para conceptos con código definido (E, I, N), aplicar lógica automática
+      // Para conceptos sin código, respetar el valor ingresado
+      let montoFinal = monto;
+      
+      if (concepto.codigo && concepto.codigo.trim() !== '') {
+        // Aplicar lógica de signos automática para conceptos con código
+        montoFinal = aplicarSignoSegunCodigo(Math.abs(monto), concepto.codigo);
+        console.log('🔧 [PAGADURÍA] Signo aplicado automáticamente:', {
+          concepto: concepto.nombre,
+          montoOriginal: monto,
+          montoAbsoluto: Math.abs(monto),
+          codigo: concepto.codigo,
+          montoFinal: montoFinal,
+          razon: 'Concepto tiene código definido',
+          logicaAplicada: concepto.codigo === 'E' ? 'Egreso → Negativo' : 
+                         concepto.codigo === 'I' ? 'Ingreso → Positivo' : 
+                         concepto.codigo === 'N' ? 'Neutro → Positivo' : 'Código desconocido'
+        });
+      } else {
+        // Para conceptos sin código, respetar el valor ingresado por el usuario
+        montoFinal = monto;
+        console.log('✋ [PAGADURÍA] Valor respetado tal como ingresó el usuario:', {
+          monto: montoFinal,
+          razon: 'Concepto sin código definido'
+        });
+      }
+      
+      console.log('📤 [PAGADURÍA] Enviando al backend:', {
+        montoFinal,
+        aplicacionSignos: concepto.codigo ? 'automática' : 'manual'
+      });
+      
+      // Llamar a la función original con el monto final
+      const resultado = await guardarTransaccion(conceptoId, cuentaId, montoFinal, companiaId);
+      
+      console.log('📋 [PAGADURÍA] Resultado del backend:', {
+        success: resultado,
+        concepto: concepto.nombre,
+        monto: montoFinal
+      });
+      
+      if (!resultado) {
+        console.error('❌ [PAGADURÍA] El backend retornó false para:', {
+          concepto: concepto.nombre,
+          monto: montoFinal,
+          errorContext: 'Operación de guardado falló'
+        });
+      } else {
+        console.log('✅ [PAGADURÍA] Guardado exitoso en backend para:', {
+          concepto: concepto.nombre,
+          monto: montoFinal
+        });
+      }
+      
+      return resultado;
+      
+    } catch (error) {
+      console.error('❌ [PAGADURÍA] Error aplicando signos a transacción:', error);
+      return false;
+    }
+  };
+
   // Función para convertir conceptos del backend al formato del frontend
   const convertirConceptosParaTabla = (conceptosBackend: ConceptoFlujoCaja[]): Concepto[] => {
     return conceptosBackend.map(concepto => ({
@@ -684,7 +815,7 @@ const DashboardPagaduria: React.FC = () => {
                           cuentaId={account.id}
                           valor={obtenerMontoConConversion(concepto.id || 0, account.id, account.tipo_moneda)}
                           currency={account.tipo_moneda}
-                          onGuardar={guardarTransaccion}
+                          onGuardar={guardarTransaccionConSignos} // 🔧 Usar función con lógica de signos
                           companiaId={account.compania?.id}
                           disabled={isConceptoAutoCalculado(concepto.id)} // 🚫 Deshabilitar conceptos auto-calculados
                         />

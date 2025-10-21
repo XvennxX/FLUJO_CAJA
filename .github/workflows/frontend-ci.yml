@@ -1,0 +1,78 @@
+name: Frontend CI
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'Front-FC/**'
+      - '.github/workflows/frontend-ci.yml'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - 'Front-FC/**'
+      - '.github/workflows/frontend-ci.yml'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: Front-FC/package-lock.json
+    
+    - name: Install dependencies
+      working-directory: ./Front-FC
+      run: npm ci
+    
+    - name: Lint code
+      working-directory: ./Front-FC
+      run: npm run lint
+    
+    - name: Type check
+      working-directory: ./Front-FC
+      run: npx tsc --noEmit
+    
+    - name: Run tests
+      working-directory: ./Front-FC
+      run: npm test -- --coverage
+    
+    - name: Build
+      working-directory: ./Front-FC
+      env:
+        VITE_API_BASE_URL: https://api.example.com
+        VITE_ENVIRONMENT: production
+      run: npm run build
+    
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: frontend-build
+        path: Front-FC/dist
+        retention-days: 7
+
+  lint-security:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: Front-FC/package-lock.json
+    
+    - name: Install dependencies
+      working-directory: ./Front-FC
+      run: npm ci
+    
+    - name: Run security audit
+      working-directory: ./Front-FC
+      run: npm audit --audit-level=moderate
