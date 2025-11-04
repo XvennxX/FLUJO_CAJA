@@ -16,7 +16,7 @@ export const useCompanies = () => {
 
   // Obtener token del localStorage
   const getToken = () => {
-    return localStorage.getItem('authToken');
+    return localStorage.getItem('access_token');
   };
 
   // Headers para las peticiones API

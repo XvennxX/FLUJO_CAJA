@@ -12,6 +12,7 @@ class Compania(Base):
     # Relaciones
     cuentas_bancarias = relationship("CuentaBancaria", back_populates="compania")
     transacciones_flujo_caja = relationship("TransaccionFlujoCaja", back_populates="compania")
+    conciliaciones = relationship("ConciliacionContable", back_populates="empresa")
     
     def __repr__(self):
         return f"<Compania(id={self.id}, nombre='{self.nombre}')>"
