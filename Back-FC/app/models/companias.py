@@ -12,6 +12,8 @@ class Compania(Base):
     # Relaciones
     cuentas_bancarias = relationship("CuentaBancaria", back_populates="compania")
     transacciones_flujo_caja = relationship("TransaccionFlujoCaja", back_populates="compania")
+    # Usar lazy string para evitar errores de importación circular
+    conciliaciones = relationship("ConciliacionContable", back_populates="empresa", lazy="select")
     
     def __repr__(self):
         return f"<Compania(id={self.id}, nombre='{self.nombre}')>"

@@ -10,6 +10,8 @@ import logging
 from typing import Optional, Dict, Any
 import sys
 import os
+import urllib3
+import ssl
 
 # Agregar el directorio padre al path para importar desde app
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -32,6 +34,9 @@ logger = logging.getLogger(__name__)
 
 class TRMScraper:
     def __init__(self):
+        # Desactivar advertencias SSL para certificados autofirmados
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        
         # URLs alternativas para obtener la TRM
         self.urls = {
             'datos_abiertos': 'https://www.datos.gov.co/resource/32sa-8pi3.json',  # API de datos abiertos
@@ -47,6 +52,12 @@ class TRMScraper:
             'Connection': 'keep-alive',
             'Upgrade-Insecure-Requests': '1'
         }
+        
+        # Configurar sesión con manejo de SSL
+        self.session = requests.Session()
+        self.session.headers.update(self.headers)
+        # Permite certificados autofirmados temporalmente
+        self.session.verify = False
     
     def get_trm_from_datos_abiertos(self, fecha: date = None) -> Optional[Decimal]:
         """
@@ -64,7 +75,7 @@ class TRMScraper:
             
             logger.info(f"Consultando TRM para fecha {fecha_str} desde datos abiertos...")
             
-            response = requests.get(url, headers=self.headers, timeout=30)
+            response = self.session.get(url, timeout=30)
             response.raise_for_status()
             
             data = response.json()
@@ -106,9 +117,8 @@ class TRMScraper:
             
             logger.info(f"Consultando TRM para fecha {fecha_str} desde Banco de la República...")
             
-            response = requests.get(
+            response = self.session.get(
                 self.urls['banrep_api'], 
-                headers=self.headers, 
                 params=params, 
                 timeout=30
             )

@@ -16,7 +16,7 @@ export const useDiferenciaSaldos = (): DiferenciaSaldosHookResult => {
     setError(null);
     
     try {
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem('access_token');
       const response = await fetch(
         'http://localhost:8000/api/v1/diferencia-saldos/calcular-diferencia-saldos',
         {
@@ -49,7 +49,7 @@ export const useDiferenciaSaldos = (): DiferenciaSaldosHookResult => {
 
   const verificarNecesidadCalculo = async (fecha: string): Promise<boolean> => {
     try {
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem('access_token');
       const response = await fetch(
         `http://localhost:8000/api/v1/diferencia-saldos/verificar-necesidad/${fecha}`,
         {
