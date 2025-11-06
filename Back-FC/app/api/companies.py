@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from ..core.database import get_db
@@ -11,12 +11,7 @@ from ..schemas.companies import (
     CompaniaListResponse
 )
 from ..api.auth import get_current_user
-from ..services.auth_service import get_current_user_optional
-from ..services.auditoria_service import AuditoriaService
-from ..models.usuarios import Usuario
-import logging
 
-logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/companies", tags=["companies"])
 
 # Endpoint temporal para testing sin autenticación
@@ -34,7 +29,6 @@ async def get_companies_test(
 @router.post("/test", response_model=CompaniaResponse, status_code=status.HTTP_201_CREATED)
 async def create_company_test(
     company_data: CompaniaCreate,
-    request: Request,
     db: Session = Depends(get_db)
 ):
     """
@@ -59,37 +53,7 @@ async def create_company_test(
     db.add(new_company)
     db.commit()
     db.refresh(new_company)
-
-    # 📝 AUDITORÍA (test): Registrar creación de empresa
-    try:
-        # Intentar obtener usuario autenticado, sino usar usuario por defecto
-        current_user = await get_current_user_optional(request, db)
-        
-        if not current_user:
-            # Si no hay usuario autenticado, usar usuario por defecto
-            current_user = db.query(Usuario).filter(Usuario.email == "admin@sifco.com").first()
-            if not current_user:
-                # Si no existe el admin, crear un usuario temporal para auditoría
-                current_user = type('Usuario', (), {
-                    'id': 1,
-                    'nombre': 'Sistema Test',
-                    'email': 'sistema@test.com'
-                })()
-        
-        AuditoriaService.registrar_accion(
-            db=db,
-            usuario=current_user,
-            accion="CREATE",
-            modulo="EMPRESAS",
-            entidad="Compania",
-            entidad_id=str(new_company.id),
-            descripcion=f"Creó empresa: {new_company.nombre}",
-            valores_nuevos={"nombre": new_company.nombre}
-        )
-        logger.info(f"✅ Auditoría registrada: CREATE empresa {new_company.id}")
-    except Exception as e:
-        logger.warning(f"Error en auditoría de creación de empresa: {e}")
-
+    
     return new_company
 
 # Endpoint temporal para actualizar sin autenticación
@@ -97,7 +61,6 @@ async def create_company_test(
 async def update_company_test(
     company_id: int,
     company_data: CompaniaUpdate,
-    request: Request,
     db: Session = Depends(get_db)
 ):
     """
@@ -123,54 +86,19 @@ async def update_company_test(
                 detail="Ya existe una compañía con ese nombre"
             )
     
-    # Guardar valor anterior para auditoría
-    nombre_anterior = company.nombre
-
     # Actualizar campos
     if company_data.nombre is not None:
         company.nombre = company_data.nombre
     
     db.commit()
     db.refresh(company)
-
-    # 📝 AUDITORÍA (test): Registrar actualización de empresa
-    try:
-        # Intentar obtener usuario autenticado, sino usar usuario por defecto
-        current_user = await get_current_user_optional(request, db)
-        
-        if not current_user:
-            # Si no hay usuario autenticado, usar usuario por defecto
-            current_user = db.query(Usuario).filter(Usuario.email == "admin@sifco.com").first()
-            if not current_user:
-                # Si no existe el admin, crear un usuario temporal para auditoría
-                current_user = type('Usuario', (), {
-                    'id': 1,
-                    'nombre': 'Sistema Test',
-                    'email': 'sistema@test.com'
-                })()
-        
-        AuditoriaService.registrar_accion(
-            db=db,
-            usuario=current_user,
-            accion="UPDATE",
-            modulo="EMPRESAS",
-            entidad="Compania",
-            entidad_id=str(company.id),
-            descripcion=f"Actualizó empresa: {nombre_anterior} → {company.nombre}" if nombre_anterior != company.nombre else f"Actualizó empresa: {company.nombre}",
-            valores_anteriores={"nombre": nombre_anterior},
-            valores_nuevos={"nombre": company.nombre}
-        )
-        logger.info(f"✅ Auditoría registrada: UPDATE empresa {company.id}")
-    except Exception as e:
-        logger.warning(f"Error en auditoría de actualización de empresa: {e}")
-
+    
     return company
 
 # Endpoint temporal para eliminar sin autenticación
 @router.delete("/test/{company_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_company_test(
     company_id: int,
-    request: Request,
     db: Session = Depends(get_db)
 ):
     """
@@ -190,41 +118,8 @@ async def delete_company_test(
             detail="No se puede eliminar la compañía porque tiene cuentas bancarias asociadas"
         )
     
-    # Guardar para auditoría
-    nombre_eliminado = company.nombre
-
     db.delete(company)
     db.commit()
-
-    # 📝 AUDITORÍA (test): Registrar eliminación de empresa
-    try:
-        # Intentar obtener usuario autenticado, sino usar usuario por defecto
-        current_user = await get_current_user_optional(request, db)
-        
-        if not current_user:
-            # Si no hay usuario autenticado, usar usuario por defecto
-            current_user = db.query(Usuario).filter(Usuario.email == "admin@sifco.com").first()
-            if not current_user:
-                # Si no existe el admin, crear un usuario temporal para auditoría
-                current_user = type('Usuario', (), {
-                    'id': 1,
-                    'nombre': 'Sistema Test',
-                    'email': 'sistema@test.com'
-                })()
-        
-        AuditoriaService.registrar_accion(
-            db=db,
-            usuario=current_user,
-            accion="DELETE",
-            modulo="EMPRESAS",
-            entidad="Compania",
-            entidad_id=str(company_id),
-            descripcion=f"Eliminó empresa: {nombre_eliminado}",
-            valores_anteriores={"nombre": nombre_eliminado}
-        )
-        logger.info(f"✅ Auditoría registrada: DELETE empresa {company_id}")
-    except Exception as e:
-        logger.warning(f"Error en auditoría de eliminación de empresa: {e}")
 
 @router.get("/", response_model=List[CompaniaListResponse])
 async def get_companies(
@@ -295,22 +190,6 @@ async def create_company(
     db.commit()
     db.refresh(new_company)
     
-    # 📝 AUDITORÍA: Registrar creación de empresa
-    try:
-        AuditoriaService.registrar_accion(
-            db=db,
-            usuario=current_user,
-            accion="CREATE",
-            modulo="EMPRESAS",
-            entidad="Compania",
-            entidad_id=str(new_company.id),
-            descripcion=f"Creó empresa: {new_company.nombre}",
-            valores_nuevos={"nombre": new_company.nombre}
-        )
-        logger.info(f"✅ Auditoría registrada: CREATE empresa {new_company.id}")
-    except Exception as e:
-        logger.warning(f"Error en auditoría de creación de empresa: {e}")
-    
     return new_company
 
 @router.put("/{company_id}", response_model=CompaniaResponse)
@@ -329,9 +208,6 @@ async def update_company(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Compañía no encontrada"
         )
-    
-    # Guardar valor anterior para auditoría
-    nombre_anterior = company.nombre
     
     # Verificar duplicados si se cambia el nombre
     if company_data.nombre and company_data.nombre != company.nombre:
@@ -352,23 +228,6 @@ async def update_company(
     
     db.commit()
     db.refresh(company)
-    
-    # 📝 AUDITORÍA: Registrar actualización de empresa
-    try:
-        AuditoriaService.registrar_accion(
-            db=db,
-            usuario=current_user,
-            accion="UPDATE",
-            modulo="EMPRESAS",
-            entidad="Compania",
-            entidad_id=str(company.id),
-            descripcion=f"Actualizó empresa: {nombre_anterior} → {company.nombre}" if nombre_anterior != company.nombre else f"Actualizó empresa: {company.nombre}",
-            valores_anteriores={"nombre": nombre_anterior},
-            valores_nuevos={"nombre": company.nombre}
-        )
-        logger.info(f"✅ Auditoría registrada: UPDATE empresa {company.id}")
-    except Exception as e:
-        logger.warning(f"Error en auditoría de actualización de empresa: {e}")
     
     return company
 
@@ -395,24 +254,5 @@ async def delete_company(
             detail="No se puede eliminar la compañía porque tiene cuentas bancarias asociadas"
         )
     
-    # Guardar datos para auditoría antes de eliminar
-    nombre_eliminado = company.nombre
-    
     db.delete(company)
     db.commit()
-    
-    # 📝 AUDITORÍA: Registrar eliminación de empresa
-    try:
-        AuditoriaService.registrar_accion(
-            db=db,
-            usuario=current_user,
-            accion="DELETE",
-            modulo="EMPRESAS",
-            entidad="Compania",
-            entidad_id=str(company_id),
-            descripcion=f"Eliminó empresa: {nombre_eliminado}",
-            valores_anteriores={"nombre": nombre_eliminado}
-        )
-        logger.info(f"✅ Auditoría registrada: DELETE empresa {company_id}")
-    except Exception as e:
-        logger.warning(f"Error en auditoría de eliminación de empresa: {e}")

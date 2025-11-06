@@ -2,6 +2,23 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Escala global del diseño - Reducido al 71% sin barras */
+html {
+  font-size: 71%;
+  overflow-x: hidden;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+  min-height: 100vh;
+}
+
+#root {
+  min-height: 100vh;
+}
+
 /* Modo oscuro mejorado */
 @layer base {
   html.dark {

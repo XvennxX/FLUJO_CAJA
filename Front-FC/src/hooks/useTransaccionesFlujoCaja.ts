@@ -44,12 +44,12 @@ export const useTransaccionesFlujoCaja = (fecha: string, area: 'tesoreria' | 'pa
   };
 
   // Cargar transacciones para una fecha y área específica
-  const cargarTransacciones = useCallback(async (forzarRecarga = false) => {
+  const cargarTransacciones = useCallback(async () => {
     if (!fecha) return;
     
-    // 🚀 OPTIMIZACIÓN: Evitar recarga si no hay cambios (a menos que se fuerce)
+    // 🚀 OPTIMIZACIÓN: Evitar recarga si no hay cambios
     const fetchKey = `${fecha}-${area}`;
-    if (!forzarRecarga && fetchKey === lastFetchKey && transacciones.length > 0) {
+    if (fetchKey === lastFetchKey && transacciones.length > 0) {
       console.log('🚀 CACHE: Evitando recarga innecesaria de transacciones');
       return;
     }
@@ -57,12 +57,6 @@ export const useTransaccionesFlujoCaja = (fecha: string, area: 'tesoreria' | 'pa
     try {
       setLoading(true);
       setError(null);
-      
-      // 🔄 Si es recarga forzada, invalidar cache
-      if (forzarRecarga) {
-        console.log('🔄 RECARGA FORZADA: Invalidando cache para obtener datos actualizados');
-        setLastFetchKey(''); // Invalidar cache
-      }
       
       const response = await fetch(
         `http://localhost:8000/api/v1/api/transacciones-flujo-caja/fecha/${fecha}?area=${area}`,
@@ -75,10 +69,6 @@ export const useTransaccionesFlujoCaja = (fecha: string, area: 'tesoreria' | 'pa
         const data = await response.json();
         setTransacciones(data);
         setLastFetchKey(fetchKey); // 🚀 Actualizar cache key
-        
-        if (forzarRecarga) {
-          console.log('✅ RECARGA FORZADA COMPLETADA: Datos actualizados desde backend');
-        }
       } else {
         const errorData = await response.json().catch(() => ({}));
         const errorMessage = typeof errorData === 'string' 
@@ -155,11 +145,6 @@ export const useTransaccionesFlujoCaja = (fecha: string, area: 'tesoreria' | 'pa
               : t
           ));
           
-          // 🔄 IMPORTANTE: Forzar recarga para obtener auto-cálculos actualizados del backend
-          setTimeout(() => {
-            cargarTransacciones(true); // Recarga forzada con delay para evitar condiciones de carrera
-          }, 100);
-          
           return true;
         } else {
           const errorData = await response.json().catch(() => ({}));
@@ -210,11 +195,6 @@ export const useTransaccionesFlujoCaja = (fecha: string, area: 'tesoreria' | 'pa
           if (responseData) {
             setTransacciones(prev => [...prev, responseData]);
           }
-          
-          // 🔄 IMPORTANTE: Forzar recarga para obtener auto-cálculos actualizados del backend
-          setTimeout(() => {
-            cargarTransacciones(true); // Recarga forzada con delay para evitar condiciones de carrera
-          }, 100);
           
           return true;
         } else {
@@ -290,7 +270,7 @@ export const useTransaccionesFlujoCaja = (fecha: string, area: 'tesoreria' | 'pa
       );
 
       if (response.ok) {
-        await cargarTransacciones(true); // Recargar datos con forzado
+        await cargarTransacciones(); // Recargar datos
         return true;
       } else {
         const errorData = await response.json();
@@ -304,11 +284,6 @@ export const useTransaccionesFlujoCaja = (fecha: string, area: 'tesoreria' | 'pa
     }
   }, [transacciones, cargarTransacciones]);
 
-  // Función específica para recarga forzada (para usar después de guardar transacciones)
-  const recargarTransaccionesCompleto = useCallback(async () => {
-    return await cargarTransacciones(true);
-  }, [cargarTransacciones]);
-
   // Cargar transacciones cuando cambie la fecha o área
   useEffect(() => {
     cargarTransacciones();
@@ -319,7 +294,6 @@ export const useTransaccionesFlujoCaja = (fecha: string, area: 'tesoreria' | 'pa
     loading,
     error,
     cargarTransacciones,
-    recargarTransaccionesCompleto, // Nueva función para recarga forzada
     guardarTransaccion,
     obtenerMonto,
     eliminarTransaccion,

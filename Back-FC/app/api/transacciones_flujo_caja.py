@@ -27,7 +27,6 @@ from ..services.concepto_flujo_caja_service import ConceptoFlujoCajaService
 from ..core.concepto_utils import es_concepto_auto_calculado
 from ..api.auth import get_current_user
 from ..core.websocket import websocket_manager
-from ..services.auditoria_service import log_transaccion_flujo_caja
 import asyncio
 
 logger = logging.getLogger(__name__)
@@ -54,30 +53,6 @@ async def crear_transaccion(
         
         service = TransaccionFlujoCajaService(db)
         transaccion = service.crear_transaccion(transaccion_data, current_user.id)
-        
-        # 📝 AUDITORÍA: Registrar creación de transacción
-        try:
-            from ..models.conceptos_flujo_caja import ConceptoFlujoCaja
-            from ..models.cuentas_bancarias import CuentaBancaria
-            
-            concepto = db.query(ConceptoFlujoCaja).filter(ConceptoFlujoCaja.id == transaccion_data.concepto_id).first()
-            cuenta = db.query(CuentaBancaria).filter(CuentaBancaria.id == transaccion_data.cuenta_id).first()
-            
-            concepto_nombre = concepto.nombre if concepto else f"Concepto ID {transaccion_data.concepto_id}"
-            cuenta_info = f"{cuenta.banco.nombre} - {cuenta.numero_cuenta}" if cuenta else f"Cuenta ID {transaccion_data.cuenta_id}"
-            
-            log_transaccion_flujo_caja(
-                db=db,
-                usuario=current_user,
-                accion="CREATE",
-                fecha=str(transaccion_data.fecha),
-                concepto=concepto_nombre,
-                cuenta=cuenta_info,
-                valor_nuevo=float(transaccion_data.monto)
-            )
-        except Exception as e:
-            logger.warning(f"Error en auditoría de creación: {e}")
-            # No fallar si hay error en auditoría
         
         # 🔥 AUTO-RECÁLCULO COMPLETO: Procesar AMBOS dashboards para mantener consistencia
         dependencias_service = DependenciasFlujoCajaService(db)
@@ -204,37 +179,8 @@ async def actualizar_transaccion_rapida(
                 detail="No se puede modificar un concepto auto-calculado"
             )
         
-        # Guardar valor anterior para auditoría
-        valor_anterior = float(transaccion_existente.monto)
-        
         # Actualización SOLO de la transacción (sin dependencias inmediatas)
         transaccion = service.actualizar_transaccion_simple(transaccion_id, transaccion_data, current_user.id)
-        
-        # 📝 AUDITORÍA: Registrar actualización rápida
-        try:
-            from ..models.conceptos_flujo_caja import ConceptoFlujoCaja
-            from ..models.cuentas_bancarias import CuentaBancaria
-            
-            concepto_obj = db.query(ConceptoFlujoCaja).filter(ConceptoFlujoCaja.id == transaccion.concepto_id).first()
-            cuenta = db.query(CuentaBancaria).filter(CuentaBancaria.id == transaccion.cuenta_id).first()
-            
-            concepto_nombre = concepto_obj.nombre if concepto_obj else f"Concepto ID {transaccion.concepto_id}"
-            cuenta_info = f"{cuenta.banco.nombre} - {cuenta.numero_cuenta}" if cuenta else f"Cuenta ID {transaccion.cuenta_id}"
-            
-            log_transaccion_flujo_caja(
-                db=db,
-                usuario=current_user,
-                accion="UPDATE",
-                fecha=str(transaccion.fecha),
-                concepto=concepto_nombre,
-                cuenta=cuenta_info,
-                valor_anterior=valor_anterior,
-                valor_nuevo=float(transaccion.monto)
-            )
-            logger.info(f"✅ Auditoría registrada: UPDATE RÁPIDO transacción {transaccion_id}")
-        except Exception as e:
-            logger.warning(f"Error en auditoría de actualización rápida: {e}")
-            # No fallar si hay error en auditoría
         
         # Programar procesamiento de dependencias en background
         from app.services.optimized_transaction_service import optimized_service
@@ -287,36 +233,7 @@ async def actualizar_transaccion(
         print(f"🔄 Actualizando transacción ID {transaccion_id}: {transaccion_data.dict()}")
         print(f"👤 Usuario: {current_user.id}")
         
-        # Guardar valor anterior para auditoría
-        valor_anterior = float(transaccion_existente.monto)
-        
         transaccion = service.actualizar_transaccion(transaccion_id, transaccion_data, current_user.id)
-        
-        # 📝 AUDITORÍA: Registrar actualización de transacción
-        try:
-            from ..models.conceptos_flujo_caja import ConceptoFlujoCaja
-            from ..models.cuentas_bancarias import CuentaBancaria
-            
-            concepto = db.query(ConceptoFlujoCaja).filter(ConceptoFlujoCaja.id == transaccion.concepto_id).first()
-            cuenta = db.query(CuentaBancaria).filter(CuentaBancaria.id == transaccion.cuenta_id).first()
-            
-            concepto_nombre = concepto.nombre if concepto else f"Concepto ID {transaccion.concepto_id}"
-            cuenta_info = f"{cuenta.banco.nombre} - {cuenta.numero_cuenta}" if cuenta else f"Cuenta ID {transaccion.cuenta_id}"
-            
-            log_transaccion_flujo_caja(
-                db=db,
-                usuario=current_user,
-                accion="UPDATE",
-                fecha=str(transaccion.fecha),
-                concepto=concepto_nombre,
-                cuenta=cuenta_info,
-                valor_anterior=valor_anterior,
-                valor_nuevo=float(transaccion.monto)
-            )
-            logger.info(f"✅ Auditoría registrada: UPDATE transacción {transaccion_id}")
-        except Exception as e:
-            logger.warning(f"Error en auditoría de actualización: {e}")
-            # No fallar si hay error en auditoría
         
         # 🔥 AUTO-RECÁLCULO COMPLETO: Procesar AMBOS dashboards tras actualización
         dependencias_service = DependenciasFlujoCajaService(db)
@@ -428,49 +345,10 @@ def eliminar_transaccion(
 ):
     """Eliminar una transacción"""
     service = TransaccionFlujoCajaService(db)
-    
-    # Obtener datos de la transacción antes de eliminarla para auditoría
-    transaccion_existente = service.obtener_transaccion_por_id(transaccion_id)
-    
-    if not transaccion_existente:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transacción no encontrada")
-    
-    # Guardar datos para auditoría
-    valor_eliminado = float(transaccion_existente.monto)
-    fecha_transaccion = str(transaccion_existente.fecha)
-    concepto_id = transaccion_existente.concepto_id
-    cuenta_id = transaccion_existente.cuenta_id
-    
-    # Eliminar la transacción
     eliminado = service.eliminar_transaccion(transaccion_id, current_user.id)
     
     if not eliminado:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transacción no encontrada")
-    
-    # 📝 AUDITORÍA: Registrar eliminación
-    try:
-        from ..models.conceptos_flujo_caja import ConceptoFlujoCaja
-        from ..models.cuentas_bancarias import CuentaBancaria
-        
-        concepto = db.query(ConceptoFlujoCaja).filter(ConceptoFlujoCaja.id == concepto_id).first()
-        cuenta = db.query(CuentaBancaria).filter(CuentaBancaria.id == cuenta_id).first()
-        
-        concepto_nombre = concepto.nombre if concepto else f"Concepto ID {concepto_id}"
-        cuenta_info = f"{cuenta.banco.nombre} - {cuenta.numero_cuenta}" if cuenta else f"Cuenta ID {cuenta_id}"
-        
-        log_transaccion_flujo_caja(
-            db=db,
-            usuario=current_user,
-            accion="DELETE",
-            fecha=fecha_transaccion,
-            concepto=concepto_nombre,
-            cuenta=cuenta_info,
-            valor_anterior=valor_eliminado
-        )
-        logger.info(f"✅ Auditoría registrada: DELETE transacción {transaccion_id}")
-    except Exception as e:
-        logger.warning(f"Error en auditoría de eliminación: {e}")
-        # No fallar si hay error en auditoría
 
 # ============================================
 # ENDPOINTS PARA REPORTES Y DASHBOARDS

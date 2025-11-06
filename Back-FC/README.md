@@ -1,53 +1,56 @@
-# 📁 Estructura del Proyecto - Back-FC
+# Backend - Flujo de Caja �
 
-## 🏗️ Directorios Principales
+Backend API desarrollado con **FastAPI** para el sistema de Flujo de Caja.
 
-### `/app/` - **Código Principal de la Aplicación**
-- `api/` - Endpoints REST
-- `core/` - Configuración y base de datos  
-- `models/` - Modelos SQLAlchemy
-- `schemas/` - Esquemas Pydantic
-- `services/` - Lógica de negocio
+## 🏗️ Estructura del Proyecto
 
-### `/scripts/` - **Scripts de Utilidad**
-- `utils/` - Herramientas útiles (ej: `update_trm_now.py`)
-- `tests/` - Scripts de pruebas y testing
-- `debug/` - Herramientas de análisis y debugging  
-- `maintenance/` - Scripts de mantenimiento y fixes
-- `archive/` - Código experimental/obsoleto archivado
-- `migrations/` - Migraciones de base de datos
-- `setup/` - Scripts de configuración inicial
+```
+Back-FC/
+├── app/                    # 🚀 Aplicación principal
+│   ├── api/               # REST endpoints
+│   ├── core/              # Configuración y database
+│   ├── models/            # Modelos SQLAlchemy
+│   ├── schemas/           # Esquemas Pydantic
+│   └── services/          # Lógica de negocio
+├── tests/                 # 🧪 Tests organizados
+│   ├── unit/             # Tests unitarios
+│   └── integration/      # Tests de integración
+├── scripts/              # 🛠️ Scripts organizados
+│   ├── dev/              # Desarrollo y debug
+│   ├── setup/            # Configuración inicial
+│   ├── maintenance/      # Mantenimiento
+│   └── migration/        # Migraciones
+├── tools/                # 🔧 Herramientas de verificación
+├── docs/                 # 📚 Documentación
+├── logs/                 # 📋 Archivos de log
+└── docker/               # 🐳 Configuración Docker
+```
 
-### `/docs/` - **Documentación**
-- Documentación técnica del sistema
-- Configuración TRM
-- Guías de sistema
+## 🚀 Inicio Rápido
 
-### `/docker/` - **Configuración de Contenedores**
-- Archivos Docker para despliegue
+```bash
+# Instalar dependencias
+pip install -r requirements.txt
 
-### `/logs/` - **Archivos de Log**
-- Logs del sistema y aplicación
+# Configurar variables de entorno
+cp .env.example .env
 
-## 🚀 Archivos en Raíz
+# Iniciar servidor
+python run_server.py
+```
 
-- `run_server.py` - **Script principal para iniciar el servidor**
-- `requirements.txt` - Dependencias Python
-- `.env` - Variables de entorno (no versionado)
-- `.gitignore` - Archivos ignorados por git
+## � Ejecutar Tests
 
-## 🧹 Reorganización Completada
+```bash
+# Todos los tests
+pytest
 
-✅ **Movidos a `/scripts/tests/`:**
-- Todos los archivos `test_*.py`
-- Scripts de bash `test_completo.*`
+# Solo unitarios
+pytest tests/unit/
 
-✅ **Movidos a `/scripts/debug/`:**
-- Archivos `debug_*.py`
-- Archivos `diagnostico*.py`
-- Archivos `analizar*.py`
-- Archivos `verificar*.py`
-- Archivos `ver_*.py`
+# Con coverage
+pytest --cov=app tests/
+```
 
 ✅ **Movidos a `/scripts/maintenance/`:**
 - Archivos `fix_*.py`

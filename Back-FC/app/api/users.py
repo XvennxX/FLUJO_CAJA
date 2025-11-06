@@ -1,15 +1,12 @@
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-import logging
 
 from ..core.database import get_db
 from ..models.usuarios import Usuario
 from ..schemas.auth import UserResponse, UserCreate, UserUpdate
 from ..services.auth_service import get_current_user, check_user_role, get_password_hash
-from ..services.auditoria_service import AuditoriaService
 
-logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/users", tags=["users"])
 
 @router.get("/", response_model=List[UserResponse])
@@ -53,51 +50,18 @@ async def update_user(
             detail="User not found"
         )
     
-    # Guardar valores anteriores para auditoría
-    valores_anteriores = {
-        "nombre": user.nombre,
-        "email": user.email,
-        "rol": user.rol
-    }
-    
     # Actualizar campos proporcionados
     update_data = user_update.model_dump(exclude_unset=True)
     
     # Si se proporciona nueva contraseña, hashearla
     if "password" in update_data:
         update_data["contrasena"] = get_password_hash(update_data.pop("password"))
-        valores_anteriores["password"] = "***"  # No guardar contraseñas en auditoría
     
     for field, value in update_data.items():
         setattr(user, field, value)
     
     db.commit()
     db.refresh(user)
-    
-    # 📝 AUDITORÍA: Registrar actualización de usuario
-    try:
-        valores_nuevos = {
-            "nombre": user.nombre,
-            "email": user.email,
-            "rol": user.rol
-        }
-        if "contrasena" in update_data:
-            valores_nuevos["password"] = "*** (actualizada)"
-        
-        AuditoriaService.registrar_accion(
-            db=db,
-            usuario=current_user,
-            accion="UPDATE",
-            modulo="USUARIOS",
-            entidad="Usuario",
-            entidad_id=str(user.id),
-            descripcion=f"Actualizó perfil de usuario: {user.nombre}",
-            valores_anteriores=valores_anteriores,
-            valores_nuevos=valores_nuevos
-        )
-        logger.info(f"✅ Auditoría registrada: UPDATE usuario {user.id}")
-    except Exception as e:
-        logger.warning(f"Error en auditoría de actualización de usuario: {e}")
     
     return UserResponse.model_validate(user)
 
@@ -122,32 +86,7 @@ async def delete_user(
             detail="Cannot delete your own account"
         )
     
-    # Guardar datos para auditoría antes de eliminar
-    nombre_eliminado = user.nombre
-    email_eliminado = user.email
-    rol_eliminado = user.rol
-    
     db.delete(user)
     db.commit()
-    
-    # 📝 AUDITORÍA: Registrar eliminación de usuario
-    try:
-        AuditoriaService.registrar_accion(
-            db=db,
-            usuario=current_user,
-            accion="DELETE",
-            modulo="USUARIOS",
-            entidad="Usuario",
-            entidad_id=str(user_id),
-            descripcion=f"Eliminó usuario: {nombre_eliminado} ({email_eliminado})",
-            valores_anteriores={
-                "nombre": nombre_eliminado,
-                "email": email_eliminado,
-                "rol": rol_eliminado
-            }
-        )
-        logger.info(f"✅ Auditoría registrada: DELETE usuario {user_id}")
-    except Exception as e:
-        logger.warning(f"Error en auditoría de eliminación de usuario: {e}")
     
     return {"message": "User deleted successfully"}

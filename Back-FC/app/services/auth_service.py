@@ -77,48 +77,13 @@ async def get_current_user(
         raise credentials_exception
     return user
 
-async def get_current_user_optional(
-    request,
-    db: Session
-) -> Optional[Usuario]:
-    """Obtener usuario actual de manera opcional (sin lanzar excepción si no está autenticado)"""
-    try:
-        # Intentar obtener el token del header Authorization
-        auth_header = request.headers.get("authorization")
-        if not auth_header or not auth_header.startswith("Bearer "):
-            return None
-            
-        token = auth_header.split(" ")[1]
-        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
-        email: str = payload.get("sub")
-        if email is None:
-            return None
-            
-        user = db.query(Usuario).filter(Usuario.email == email).first()
-        return user
-    except:
-        return None
-
 def check_user_role(required_roles: list[str]):
-    """Decorador para verificar roles de usuario"""
+    """Decorator para verificar roles de usuario"""
     def role_checker(current_user: Usuario = Depends(get_current_user)):
         if current_user.rol not in required_roles:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="No tienes permisos para acceder a este recurso"
+                detail="Not enough permissions"
             )
         return current_user
     return role_checker
-
-def get_current_user_from_token(token: str, db: Session) -> Optional[Usuario]:
-    """Obtener usuario desde token sin usar FastAPI dependencies"""
-    try:
-        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
-        email: str = payload.get("sub")
-        if email is None:
-            return None
-        
-        user = db.query(Usuario).filter(Usuario.email == email).first()
-        return user
-    except JWTError:
-        return None

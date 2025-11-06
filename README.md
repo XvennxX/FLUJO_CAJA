@@ -21,14 +21,28 @@ FLUJO_CAJA/
 │   ├── docs/              # Documentación del frontend
 │   ├── package.json       # Dependencias Node.js
 │   └── README.md         # Documentación del frontend
-├── 📁 tools/                # Herramientas y scripts generales
-│   ├── debug/             # Scripts de debug y análisis
+├── 📁 config/               # ⭐ Configuración centralizada
+│   ├── docker-compose.yml # Docker Compose para servicios
+│   ├── Makefile           # Comandos útiles del proyecto
+│   └── README.md         # Documentación de configuración
+├── 📁 scripts/              # ⭐ Scripts del proyecto
 │   ├── setup/             # Scripts de configuración inicial
+│   │   ├── setup.ps1     # Setup para Windows
+│   │   └── setup.sh      # Setup para Linux/Mac
+│   └── README.md         # Documentación de scripts
+├── 📁 tools/                # Herramientas y utilidades
+│   ├── debug/             # Scripts de debug y análisis
 │   ├── maintenance/       # Scripts de mantenimiento
 │   └── README.md         # Documentación de herramientas
 ├── 📁 docs/                 # Documentación global del proyecto
+├── 📁 .github/              # Configuración de GitHub (CI/CD, templates)
 ├── 📁 .venv/               # Entorno virtual Python (local)
+├── .editorconfig           # Configuración del editor
+├── .env.example            # Ejemplo de variables de entorno
 ├── .gitignore              # Archivos ignorados por Git
+├── CHANGELOG.md            # Historial de cambios
+├── CONTRIBUTING.md         # Guía de contribución
+├── LICENSE                 # Licencia del proyecto
 └── README.md              # Este archivo - Documentación principal
 ```
 

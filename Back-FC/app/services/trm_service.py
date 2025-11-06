@@ -21,15 +21,25 @@ class TRMService:
             import sys
             import os
             # Agregar scripts al path si no existe
-            scripts_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'scripts')
+            scripts_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'scripts')
             if scripts_path not in sys.path:
                 sys.path.append(scripts_path)
             
             from trm.trm_scraper import TRMScraper
             self.scraper = TRMScraper()
-            logger.info("TRM Scraper inicializado correctamente")
+            logger.info("✅ TRM Scraper inicializado correctamente")
+        except ImportError as e:
+            logger.error(f"❌ Error importando TRM Scraper: {e}")
+            # Intentar con ruta alternativa
+            try:
+                from scripts.trm.trm_scraper import TRMScraper
+                self.scraper = TRMScraper()
+                logger.info("✅ TRM Scraper inicializado correctamente (ruta alternativa)")
+            except Exception as e2:
+                logger.error(f"❌ Error en ruta alternativa: {e2}")
+                self.scraper = None
         except Exception as e:
-            logger.error(f"Error inicializando TRM Scraper: {e}")
+            logger.error(f"❌ Error inesperado inicializando TRM Scraper: {e}")
             self.scraper = None
 
     def verificar_trms_faltantes(self, days_back: int = 7) -> dict:

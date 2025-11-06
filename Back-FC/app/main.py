@@ -7,8 +7,6 @@ import logging
 from .core.config import get_settings
 from .core.database import engine, Base, SessionLocal
 from .api import api_router
-# from .api.auditoria import router as auditoria_router  # Ya incluido en api_router
-# from .middleware.auditoria_middleware import AuditoriaMiddleware  # Comentado temporalmente
 
 settings = get_settings()
 

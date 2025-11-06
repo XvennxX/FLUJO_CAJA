@@ -6,6 +6,8 @@ from .cuentas_bancarias import CuentaBancaria, TipoCuenta
 from .cuenta_moneda import CuentaMoneda, TipoMoneda
 from .transacciones_flujo_caja import TransaccionFlujoCaja, AreaTransaccion
 from .notificaciones import Notificacion
+from .trm import TRM
+from .conciliacion_contable import ConciliacionContable
 
 __all__ = [
     "Usuario",
@@ -15,5 +17,7 @@ __all__ = [
     "CuentaBancaria", "TipoCuenta",
     "CuentaMoneda", "TipoMoneda",
     "TransaccionFlujoCaja", "AreaTransaccion",
-    "Notificacion"
+    "Notificacion",
+    "TRM",
+    "ConciliacionContable"
 ]
