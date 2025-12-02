@@ -21,6 +21,8 @@ class CuentaBancaria(Base):
     banco = relationship("Banco", back_populates="cuentas_bancarias")
     transacciones = relationship("TransaccionFlujoCaja", back_populates="cuenta")
     monedas = relationship("CuentaMoneda", back_populates="cuenta", cascade="all, delete-orphan")
+    gmf_configs = relationship("GMFConfig", back_populates="cuenta_bancaria", cascade="all, delete-orphan")
+    gmf_configs = relationship("GMFConfig", back_populates="cuenta_bancaria", cascade="all, delete-orphan")
     
     def __repr__(self):
         return f"<CuentaBancaria(id={self.id}, numero='{self.numero_cuenta}', tipo='{self.tipo_cuenta}')>"

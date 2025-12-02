@@ -7,6 +7,8 @@ from datetime import date, timedelta
 from sqlalchemy.orm import Session
 from app.core.database import SessionLocal
 from app.models.trm import TRM
+from app.models.dias_festivos import DiaFestivo
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +27,7 @@ class TRMService:
             if scripts_path not in sys.path:
                 sys.path.append(scripts_path)
             
-            from trm.trm_scraper import TRMScraper
+            from trm.trm_scraper import TRMScraper  # type: ignore
             self.scraper = TRMScraper()
             logger.info("✅ TRM Scraper inicializado correctamente")
         except ImportError as e:
@@ -52,15 +54,6 @@ class TRMService:
         Returns:
             dict: Resumen de la operación
         """
-        if not self.scraper:
-            logger.warning("TRM Scraper no disponible")
-            return {
-                "success": False,
-                "error": "TRM Scraper no disponible",
-                "missing_count": 0,
-                "updated_count": 0
-            }
-
         logger.info(f"🔍 Verificando TRMs faltantes para los últimos {days_back} días")
         
         today = date.today()
@@ -80,20 +73,17 @@ class TRMService:
                     logger.info(f"❌ TRM faltante para {check_date}")
                     missing_count += 1
                     
-                    # Intentar actualizar
+                    # Intentar crear TRM para la fecha (día hábil: scrapeo; fin de semana/festivo: copiar última disponible)
                     try:
-                        success = self.scraper.update_daily_trm(check_date)
-                        
-                        if success:
-                            logger.info(f"✅ TRM actualizada exitosamente para {check_date}")
+                        if self._upsert_trm_para_fecha(check_date, db):
                             updated_count += 1
+                            logger.info(f"✅ TRM registrada para {check_date}")
                         else:
-                            error_msg = f"No se pudo obtener TRM para {check_date} (posible día no hábil)"
+                            error_msg = f"No se pudo registrar TRM para {check_date}"
                             logger.warning(error_msg)
                             errors.append(error_msg)
-                            
                     except Exception as e:
-                        error_msg = f"Error actualizando TRM para {check_date}: {e}"
+                        error_msg = f"Error generando TRM para {check_date}: {e}"
                         logger.error(error_msg)
                         errors.append(error_msg)
                 else:
@@ -123,24 +113,73 @@ class TRMService:
         Returns:
             bool: True si se obtuvo exitosamente
         """
-        if not self.scraper:
-            logger.warning("TRM Scraper no disponible")
-            return False
-
         try:
-            logger.info(f"🔄 Obteniendo TRM para fecha específica: {fecha}")
-            success = self.scraper.update_daily_trm(fecha)
-            
-            if success:
-                logger.info(f"✅ TRM obtenida exitosamente para {fecha}")
-            else:
-                logger.warning(f"❌ No se pudo obtener TRM para {fecha}")
-                
-            return success
-            
+            logger.info(f"🔄 Obteniendo/registrando TRM para fecha específica: {fecha}")
+            db = SessionLocal()
+            try:
+                return self._upsert_trm_para_fecha(fecha, db)
+            finally:
+                db.close()
         except Exception as e:
             logger.error(f"Error obteniendo TRM para {fecha}: {e}")
             return False
+
+    # ------------------------
+    # Métodos internos helpers
+    # ------------------------
+    def _es_dia_habil(self, f: date, db: Session) -> bool:
+        if f.isoweekday() in (6, 7):  # 6=sábado, 7=domingo
+            return False
+        try:
+            return not DiaFestivo.es_festivo(f, db)
+        except Exception:
+            # Si falla la consulta de festivos, asumir hábil para intentar scrapeo
+            return True
+
+    def _ultima_trm_antes(self, f: date, db: Session) -> Optional[TRM]:
+        return db.query(TRM).filter(TRM.fecha < f).order_by(TRM.fecha.desc()).first()
+
+    def _insertar_trm(self, f: date, valor, db: Session) -> bool:
+        try:
+            existente = db.query(TRM).filter(TRM.fecha == f).first()
+            if existente:
+                return True
+            nuevo = TRM(fecha=f, valor=valor)
+            db.add(nuevo)
+            db.commit()
+            return True
+        except Exception as e:
+            logger.error(f"Error insertando TRM para {f}: {e}")
+            db.rollback()
+            return False
+
+    def _upsert_trm_para_fecha(self, f: date, db: Session) -> bool:
+        """Registra TRM para una fecha: si es día hábil intenta scrapeo; si no, copia la última TRM disponible previa.
+        Si el scrapeo falla en día hábil, también aplica fallback de copia.
+        """
+        # Si ya existe, no hacer nada
+        if db.query(TRM).filter(TRM.fecha == f).first():
+            return True
+
+        # Día hábil: intentar scrapeo
+        if self._es_dia_habil(f, db):
+            if self.scraper:
+                try:
+                    if self.scraper.update_daily_trm(f):
+                        return True
+                except Exception as e:
+                    logger.warning(f"Fallo scrapeo TRM para {f}, se intenta fallback por copia: {e}")
+            else:
+                logger.warning("TRM Scraper no disponible; se intenta fallback por copia")
+
+        # Fines de semana / festivos o fallo de scrapeo: copiar última disponible
+        prev_trm = self._ultima_trm_antes(f, db)
+        if prev_trm:
+            logger.info(f"🛈 Usando TRM previa {prev_trm.fecha}={prev_trm.valor} para completar {f}")
+            return self._insertar_trm(f, prev_trm.valor, db)
+
+        logger.error(f"No existe TRM previa para copiar al completar {f}")
+        return False
 
 # Instancia global del servicio
 trm_service = TRMService()

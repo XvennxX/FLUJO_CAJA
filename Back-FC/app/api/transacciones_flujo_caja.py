@@ -3,7 +3,7 @@ API endpoints para gestión de transacciones de flujo de caja
 """
 import logging
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Query, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, status, Query, WebSocket, WebSocketDisconnect, Request
 from sqlalchemy.orm import Session
 from datetime import date
 import json
@@ -36,6 +36,7 @@ router = APIRouter(prefix="/api/transacciones-flujo-caja", tags=["Transacciones 
 @router.post("/", response_model=TransaccionFlujoCajaResponse, status_code=status.HTTP_201_CREATED)
 async def crear_transaccion(
     transaccion_data: TransaccionFlujoCajaCreate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
@@ -50,7 +51,7 @@ async def crear_transaccion(
                 detail=f"No se puede crear manualmente el concepto ID {transaccion_data.concepto_id}. Este valor se calcula automáticamente."
             )
         
-        logger.info(f"Creando transacción: concepto_id={transaccion_data.concepto_id}, monto={transaccion_data.monto}, usuario={current_user.id}")
+        logger.info(f"🔍 API POST: Creando transacción: concepto_id={transaccion_data.concepto_id}, monto={transaccion_data.monto}, area={transaccion_data.area}, tipo_monto={type(transaccion_data.monto)}, usuario={current_user.id}")
         
         service = TransaccionFlujoCajaService(db)
         transaccion = service.crear_transaccion(transaccion_data, current_user.id)
@@ -73,7 +74,8 @@ async def crear_transaccion(
                 fecha=str(transaccion_data.fecha),
                 concepto=concepto_nombre,
                 cuenta=cuenta_info,
-                valor_nuevo=float(transaccion_data.monto)
+                valor_nuevo=float(transaccion_data.monto),
+                request=request
             )
         except Exception as e:
             logger.warning(f"Error en auditoría de creación: {e}")
@@ -178,6 +180,7 @@ def obtener_transaccion(
 async def actualizar_transaccion_rapida(
     transaccion_id: int,
     transaccion_data: TransaccionFlujoCajaUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
@@ -229,7 +232,8 @@ async def actualizar_transaccion_rapida(
                 concepto=concepto_nombre,
                 cuenta=cuenta_info,
                 valor_anterior=valor_anterior,
-                valor_nuevo=float(transaccion.monto)
+                valor_nuevo=float(transaccion.monto),
+                request=request
             )
             logger.info(f"✅ Auditoría registrada: UPDATE RÁPIDO transacción {transaccion_id}")
         except Exception as e:
@@ -261,6 +265,7 @@ async def actualizar_transaccion_rapida(
 async def actualizar_transaccion(
     transaccion_id: int,
     transaccion_data: TransaccionFlujoCajaUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
@@ -311,7 +316,8 @@ async def actualizar_transaccion(
                 concepto=concepto_nombre,
                 cuenta=cuenta_info,
                 valor_anterior=valor_anterior,
-                valor_nuevo=float(transaccion.monto)
+                valor_nuevo=float(transaccion.monto),
+                request=request
             )
             logger.info(f"✅ Auditoría registrada: UPDATE transacción {transaccion_id}")
         except Exception as e:
@@ -423,6 +429,7 @@ def recalcular_dependencias_fecha(
 @router.delete("/{transaccion_id}", status_code=status.HTTP_204_NO_CONTENT)
 def eliminar_transaccion(
     transaccion_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
@@ -465,7 +472,8 @@ def eliminar_transaccion(
             fecha=fecha_transaccion,
             concepto=concepto_nombre,
             cuenta=cuenta_info,
-            valor_anterior=valor_eliminado
+            valor_anterior=valor_eliminado,
+            request=request
         )
         logger.info(f"✅ Auditoría registrada: DELETE transacción {transaccion_id}")
     except Exception as e:

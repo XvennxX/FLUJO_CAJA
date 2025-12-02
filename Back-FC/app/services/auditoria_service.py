@@ -42,17 +42,27 @@ class AuditoriaService:
         
         # Obtener IP del cliente
         ip_address = "127.0.0.1"
-        user_agent = None
+        user_agent = "Desconocido"
+        navegador = "Desconocido"
         
         if request:
-            # Intentar obtener la IP real del cliente
+            # Intentar obtener la IP real del cliente (prioridad a X-Forwarded-For para proxies/load balancers)
             forwarded_for = request.headers.get("X-Forwarded-For")
-            if forwarded_for:
-                ip_address = forwarded_for.split(",")[0].strip()
-            else:
-                ip_address = getattr(request.client, 'host', '127.0.0.1')
+            real_ip = request.headers.get("X-Real-IP")
             
-            user_agent = request.headers.get("User-Agent")
+            if forwarded_for:
+                # X-Forwarded-For puede tener múltiples IPs, tomar la primera
+                ip_address = forwarded_for.split(",")[0].strip()
+            elif real_ip:
+                ip_address = real_ip.strip()
+            elif request.client and hasattr(request.client, 'host'):
+                ip_address = request.client.host
+            
+            # Obtener User-Agent y determinar navegador
+            user_agent_header = request.headers.get("User-Agent", "")
+            if user_agent_header:
+                user_agent = user_agent_header
+                navegador = AuditoriaService._obtener_navegador(user_agent_header)
             
             if not endpoint:
                 endpoint = str(request.url.path)
@@ -72,7 +82,7 @@ class AuditoriaService:
             valores_anteriores=valores_anteriores,
             valores_nuevos=valores_nuevos,
             ip_address=ip_address,
-            user_agent=user_agent,
+            user_agent=navegador,  # Guardar nombre del navegador en lugar del user-agent completo
             endpoint=endpoint,
             metodo_http=metodo_http,
             fecha_hora=obtener_hora_colombia(),
@@ -187,6 +197,35 @@ class AuditoriaService:
             RegistroAuditoria.usuario_nombre
         ).distinct().all()
         return [{"id": u.usuario_id, "nombre": u.usuario_nombre} for u in usuarios]
+
+    @staticmethod
+    def _obtener_navegador(user_agent: str) -> str:
+        """Detecta el navegador desde el User-Agent"""
+        user_agent_lower = user_agent.lower()
+        
+        # Detectar navegadores comunes
+        if "edg" in user_agent_lower or "edge" in user_agent_lower:
+            return "Microsoft Edge"
+        elif "chrome" in user_agent_lower and "edg" not in user_agent_lower:
+            return "Google Chrome"
+        elif "firefox" in user_agent_lower:
+            return "Mozilla Firefox"
+        elif "safari" in user_agent_lower and "chrome" not in user_agent_lower:
+            return "Safari"
+        elif "opera" in user_agent_lower or "opr" in user_agent_lower:
+            return "Opera"
+        elif "msie" in user_agent_lower or "trident" in user_agent_lower:
+            return "Internet Explorer"
+        elif "postman" in user_agent_lower:
+            return "Postman"
+        elif "insomnia" in user_agent_lower:
+            return "Insomnia"
+        elif "curl" in user_agent_lower:
+            return "cURL"
+        elif "python" in user_agent_lower:
+            return "Python Client"
+        else:
+            return "Otro"
 
 # Funciones helper para logging específico de cada módulo
 

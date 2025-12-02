@@ -9,7 +9,7 @@ interface TRMHistorico {
 }
 
 const HistoricoTRM: React.FC = () => {
-  const { trm: currentTRM, getTRMRange } = useTRM();
+  const { trm: currentTRM } = useTRM();
   const [trmData, setTrmData] = useState<TRMHistorico[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -20,6 +20,41 @@ const HistoricoTRM: React.FC = () => {
     end: ''
   });
 
+  // Construye una serie continua día a día entre start y end, rellenando con la última TRM conocida
+  const buildContinuousSeries = (
+    rows: TRMHistorico[],
+    start?: string,
+    end?: string
+  ): TRMHistorico[] => {
+    if (!rows || rows.length === 0) return [];
+    const parse = (s: string) => new Date(s + 'T00:00:00');
+    const fmt = (d: Date) => d.toISOString().slice(0, 10);
+
+    // Ordenar ascendente por fecha para construir hacia adelante
+    const sortedAsc = [...rows].sort((a, b) => (a.fecha > b.fecha ? 1 : a.fecha < b.fecha ? -1 : 0));
+    const minDate = parse(sortedAsc[0].fecha);
+    const maxDate = parse(sortedAsc[sortedAsc.length - 1].fecha);
+    const startDate = start ? parse(start) : minDate;
+    const endDate = end ? parse(end) : maxDate;
+
+    const map = new Map<string, TRMHistorico>();
+    for (const r of rows) map.set(r.fecha, r);
+
+    const outAsc: TRMHistorico[] = [];
+    let lastKnown: TRMHistorico | null = null;
+    for (let d = startDate; d <= endDate; d = new Date(d.getTime() + 86400000)) {
+      const key = fmt(d);
+      const hit = map.get(key);
+      if (hit) {
+        outAsc.push(hit);
+        lastKnown = hit;
+      } else if (lastKnown) {
+        outAsc.push({ fecha: key, valor: lastKnown.valor, fecha_creacion: new Date().toISOString() });
+      }
+    }
+    return outAsc.reverse();
+  };
+
   // Función para obtener el rango de TRM
   const fetchTRMData = async () => {
     try {
@@ -27,6 +62,7 @@ const HistoricoTRM: React.FC = () => {
       
       let startDate = dateRange.start;
       let endDate = dateRange.end;
+      const today = new Date().toISOString().split('T')[0];
       
       // Si se selecciona mes/año específico, calcular rango
       if (selectedMonth && selectedYear) {
@@ -46,9 +82,8 @@ const HistoricoTRM: React.FC = () => {
         url += `&fecha_inicio=${startDate}`;
       }
       
-      if (endDate) {
-        url += `&fecha_fin=${endDate}`;
-      }
+      // Siempre traer hasta hoy si no hay fin explícito
+      url += `&fecha_fin=${endDate || today}`;
       
       const headers = {
         'Content-Type': 'application/json',
@@ -60,8 +95,13 @@ const HistoricoTRM: React.FC = () => {
         throw new Error('Error al obtener rango de TRM');
       }
       
-      const data = await response.json();
-      setTrmData(data);
+      const data: TRMHistorico[] = await response.json();
+      const continuous = buildContinuousSeries(
+        data,
+        startDate || undefined,
+        (endDate || today)
+      );
+      setTrmData(continuous);
     } catch (err) {
       console.error('Error fetching TRM data:', err);
     } finally {
@@ -72,6 +112,13 @@ const HistoricoTRM: React.FC = () => {
   useEffect(() => {
     fetchTRMData();
   }, [selectedMonth, selectedYear, dateRange]);
+
+  useEffect(() => {
+    if (currentTRM?.fecha) {
+      fetchTRMData();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentTRM?.fecha]);
 
   // Filtrar datos por término de búsqueda
   const filteredData = trmData.filter(item => {

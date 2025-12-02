@@ -8,6 +8,7 @@ from decimal import Decimal
 from app.core.database import get_db
 from app.models.trm import TRM
 from pydantic import BaseModel
+from app.services.trm_service import trm_service
 
 router = APIRouter()
 
@@ -43,69 +44,22 @@ def get_trm_by_date(fecha: date, db: Session = Depends(get_db)):
 
 @router.post("/verificar-faltantes")
 def verificar_trms_faltantes(days_back: int = 7):
-    """Verificar y actualizar TRMs faltantes"""
+    """Verificar y actualizar TRMs faltantes usando el servicio interno"""
     try:
-        import subprocess
-        import sys
-        import os
-        
-        # Ruta al script de actualización
-        script_path = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 
-            'scripts', 'trm', 'update_missing_trm.py'
-        )
-        
-        if not os.path.exists(script_path):
-            raise HTTPException(status_code=500, detail="Script de actualización no encontrado")
-        
-        # Ejecutar el script
-        result = subprocess.run([
-            sys.executable, script_path, str(days_back)
-        ], capture_output=True, text=True, timeout=300)
-        
-        return {
-            "success": result.returncode == 0,
-            "stdout": result.stdout,
-            "stderr": result.stderr,
-            "days_checked": days_back
-        }
-        
-    except subprocess.TimeoutExpired:
-        raise HTTPException(status_code=500, detail="Timeout ejecutando script de TRM")
+        resultado = trm_service.verificar_trms_faltantes(days_back=days_back)
+        return resultado
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error verificando TRMs: {str(e)}")
 
 @router.post("/obtener-fecha/{fecha}")
 def obtener_trm_fecha(fecha: date):
-    """Obtener TRM para una fecha específica"""
+    """Obtener TRM para una fecha específica usando el servicio interno"""
     try:
-        import subprocess
-        import sys
-        import os
-        
-        # Ruta al script de actualización
-        script_path = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 
-            'scripts', 'trm', 'update_missing_trm.py'
-        )
-        
-        if not os.path.exists(script_path):
-            raise HTTPException(status_code=500, detail="Script de actualización no encontrado")
-        
-        # Ejecutar el script con fecha específica
-        result = subprocess.run([
-            sys.executable, script_path, fecha.isoformat()
-        ], capture_output=True, text=True, timeout=60)
-        
+        exito = trm_service.obtener_trm_fecha(fecha)
         return {
-            "success": result.returncode == 0,
-            "stdout": result.stdout,
-            "stderr": result.stderr,
+            "success": exito,
             "fecha": fecha.isoformat()
         }
-        
-    except subprocess.TimeoutExpired:
-        raise HTTPException(status_code=500, detail="Timeout obteniendo TRM")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error obteniendo TRM: {str(e)}")
 

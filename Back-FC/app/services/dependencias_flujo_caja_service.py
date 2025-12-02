@@ -12,6 +12,7 @@ import logging
 
 from app.models.conceptos_flujo_caja import ConceptoFlujoCaja, TipoDependencia, AreaConcepto
 from app.models.transacciones_flujo_caja import TransaccionFlujoCaja, AreaTransaccion
+from app.models.gmf_config import GMFConfig
 from app.models.cuentas_bancarias import CuentaBancaria
 from app.schemas.flujo_caja import AreaTransaccionSchema
 from app.services.dias_habiles_service import DiasHabilesService
@@ -35,6 +36,258 @@ class DependenciasFlujoCajaService:
             return AreaTransaccion.pagaduria
         else:
             return AreaTransaccion.tesoreria  # Default
+
+    # ===========================
+    # MÉTODOS DE RECÁLCULO DIRECTO
+    # ===========================
+    def recalcular_saldo_neto_inicial_pagaduria(
+        self,
+        fecha: date,
+        cuenta_id: int,
+        usuario_id: Optional[int] = None,
+        compania_id: Optional[int] = None
+    ) -> Optional[Dict]:
+        """Recalcula SALDO NETO INICIAL PAGADURÍA (ID 4) = SALDO INICIAL (ID1) + CONSUMO (ID2) + VENTANILLA (ID3).
+        Se ejecuta de forma aislada cuando se modifican componentes base.
+        """
+        try:
+            # Obtener componentes
+            saldo_inicial = self.db.query(TransaccionFlujoCaja).filter(
+                TransaccionFlujoCaja.fecha == fecha,
+                TransaccionFlujoCaja.concepto_id == 1,
+                TransaccionFlujoCaja.cuenta_id == cuenta_id
+            ).first()
+            consumo = self.db.query(TransaccionFlujoCaja).filter(
+                TransaccionFlujoCaja.fecha == fecha,
+                TransaccionFlujoCaja.concepto_id == 2,
+                TransaccionFlujoCaja.cuenta_id == cuenta_id
+            ).first()
+            ventanilla = self.db.query(TransaccionFlujoCaja).filter(
+                TransaccionFlujoCaja.fecha == fecha,
+                TransaccionFlujoCaja.concepto_id == 3,
+                TransaccionFlujoCaja.cuenta_id == cuenta_id
+            ).first()
+
+            monto_saldo_inicial = saldo_inicial.monto if saldo_inicial else Decimal('0.00')
+            monto_consumo = consumo.monto if consumo else Decimal('0.00')
+            monto_ventanilla = ventanilla.monto if ventanilla else Decimal('0.00')
+
+            # Si no hay ningún componente, no crear nada
+            if not (saldo_inicial or consumo or ventanilla):
+                logger.info(f"⚠️ No hay componentes para saldo neto inicial pagaduría cuenta {cuenta_id} fecha {fecha}")
+                return None
+
+            saldo_neto_inicial = monto_saldo_inicial + monto_consumo + monto_ventanilla
+
+            trans_existente = self.db.query(TransaccionFlujoCaja).filter(
+                TransaccionFlujoCaja.fecha == fecha,
+                TransaccionFlujoCaja.concepto_id == 4,
+                TransaccionFlujoCaja.cuenta_id == cuenta_id,
+                TransaccionFlujoCaja.area == AreaTransaccion.tesoreria
+            ).first()
+
+            if trans_existente:
+                monto_anterior = trans_existente.monto
+                if monto_anterior != saldo_neto_inicial:
+                    trans_existente.monto = saldo_neto_inicial
+                    trans_existente.descripcion = "Auto-calculado directo: SALDO INICIAL + CONSUMO + VENTANILLA"
+                    auditoria_actual = trans_existente.auditoria or {}
+                    auditoria_actual.update({
+                        "accion": "actualizacion_automatica_directa",
+                        "usuario_id": usuario_id or 1,
+                        "timestamp": datetime.now().isoformat(),
+                        "cambio": {
+                            "monto_anterior": float(monto_anterior),
+                            "monto_nuevo": float(saldo_neto_inicial),
+                            "componentes": {
+                                "saldo_inicial_id1": float(monto_saldo_inicial),
+                                "consumo_id2": float(monto_consumo),
+                                "ventanilla_id3": float(monto_ventanilla)
+                            },
+                            "formula": "ID1 + ID2 + ID3"
+                        },
+                        "tipo": "saldo_neto_inicial_pagaduria_directo"
+                    })
+                    trans_existente.auditoria = auditoria_actual
+                    logger.info(f"✅ (Directo) SALDO NETO INICIAL PAGADURÍA actualizado cuenta {cuenta_id}: {monto_anterior} → {saldo_neto_inicial}")
+            else:
+                nueva = TransaccionFlujoCaja(
+                    fecha=fecha,
+                    concepto_id=4,
+                    cuenta_id=cuenta_id,
+                    monto=saldo_neto_inicial,
+                    descripcion="Auto-calculado directo: SALDO INICIAL + CONSUMO + VENTANILLA",
+                    usuario_id=usuario_id or 1,
+                    area=AreaTransaccion.tesoreria,
+                    compania_id=compania_id or 1,
+                    auditoria={
+                        "accion": "creacion_automatica_directa",
+                        "usuario_id": usuario_id or 1,
+                        "timestamp": datetime.now().isoformat(),
+                        "componentes": {
+                            "saldo_inicial_id1": float(monto_saldo_inicial),
+                            "consumo_id2": float(monto_consumo),
+                            "ventanilla_id3": float(monto_ventanilla)
+                        },
+                        "formula": "ID1 + ID2 + ID3",
+                        "monto_calculado": float(saldo_neto_inicial),
+                        "tipo": "saldo_neto_inicial_pagaduria_directo"
+                    }
+                )
+                self.db.add(nueva)
+                logger.info(f"✅ (Directo) SALDO NETO INICIAL PAGADURÍA creado cuenta {cuenta_id}: {saldo_neto_inicial}")
+
+            self.db.flush()
+            return {
+                "concepto_id": 4,
+                "concepto_nombre": "SALDO NETO INICIAL PAGADURÍA",
+                "monto_nuevo": float(saldo_neto_inicial),
+                "cuenta_id": cuenta_id,
+                "componentes": {
+                    "saldo_inicial": float(monto_saldo_inicial),
+                    "consumo": float(monto_consumo),
+                    "ventanilla": float(monto_ventanilla)
+                }
+            }
+        except Exception as e:
+            logger.error(f"❌ Error recalc saldo neto inicial pagaduría directo: {e}")
+            return None
+
+    def recalcular_gmf(
+        self,
+        fecha: date,
+        cuenta_id: int,
+        usuario_id: Optional[int] = None,
+        compania_id: Optional[int] = None
+    ) -> Optional[Dict]:
+        """Recalcula GMF para una cuenta en una fecha usando configuración activa.
+        GMF = SUM(abs(montos conceptos seleccionados)) * 4 / 1000
+        Persistido como transacción del concepto 'GMF'.
+        """
+        try:
+            # Configuración activa efectiva para la fecha
+            # Tomar la última configuración creada antes o en la fecha; si no existe, usar la última activa
+            config = self.db.query(GMFConfig).filter(
+                GMFConfig.cuenta_bancaria_id == cuenta_id,
+                GMFConfig.activo == True,
+                GMFConfig.fecha_creacion <= datetime.combine(fecha, datetime.min.time())
+            ).order_by(GMFConfig.fecha_creacion.desc()).first()
+            if not config:
+                config = self.db.query(GMFConfig).filter(
+                    GMFConfig.cuenta_bancaria_id == cuenta_id,
+                    GMFConfig.activo == True
+                ).order_by(GMFConfig.fecha_creacion.desc()).first()
+            if not config:
+                return None
+
+            try:
+                conceptos_ids = []
+                if config.conceptos_seleccionados:
+                    import json
+                    raw = json.loads(config.conceptos_seleccionados)
+                    # Aceptar tanto lista de dicts como lista simple
+                    if isinstance(raw, list):
+                        for elem in raw:
+                            if isinstance(elem, dict) and 'id' in elem:
+                                conceptos_ids.append(int(elem['id']))
+                            else:
+                                conceptos_ids.append(int(elem))
+                conceptos_ids = [cid for cid in conceptos_ids if isinstance(cid, int)]
+            except Exception:
+                conceptos_ids = []
+
+            if not conceptos_ids:
+                return None
+
+            # Obtener concepto GMF
+            concepto_gmf = self.db.query(ConceptoFlujoCaja).filter(ConceptoFlujoCaja.nombre == 'GMF').first()
+            if not concepto_gmf:
+                logger.warning("⚠️ Concepto GMF no encontrado")
+                return None
+
+            # Sumar montos con signo ya aplicado (I:+, E:-, N:±)
+            transacciones_componentes = self.db.query(TransaccionFlujoCaja).filter(
+                TransaccionFlujoCaja.fecha == fecha,
+                TransaccionFlujoCaja.cuenta_id == cuenta_id,
+                TransaccionFlujoCaja.concepto_id.in_(conceptos_ids)
+            ).all()
+
+            base_suma = Decimal('0.00')
+            componentes_montos = {}
+            for t in transacciones_componentes:
+                base_suma += t.monto
+                componentes_montos[str(t.concepto_id)] = float(t.monto)
+
+            if base_suma == 0:
+                # Si no hay base, podemos opcionalmente no crear / mantener existente en 0
+                logger.info(f"ℹ️ GMF base en 0 para cuenta {cuenta_id} fecha {fecha}")
+
+            gmf_calculado = (base_suma * Decimal('4')) / Decimal('1000')
+
+            # Upsert transacción GMF (área tesorería)
+            trans_gmf = self.db.query(TransaccionFlujoCaja).filter(
+                TransaccionFlujoCaja.fecha == fecha,
+                TransaccionFlujoCaja.concepto_id == concepto_gmf.id,
+                TransaccionFlujoCaja.cuenta_id == cuenta_id,
+                TransaccionFlujoCaja.area == AreaTransaccion.tesoreria
+            ).first()
+
+            if trans_gmf:
+                monto_anterior = trans_gmf.monto
+                if monto_anterior != gmf_calculado:
+                    trans_gmf.monto = gmf_calculado
+                    trans_gmf.descripcion = "Auto-calculado GMF"
+                    auditoria_actual = trans_gmf.auditoria or {}
+                    auditoria_actual.update({
+                        "accion": "actualizacion_automatica_gmf",
+                        "usuario_id": usuario_id or 1,
+                        "timestamp": datetime.now().isoformat(),
+                        "cambio": {
+                            "monto_anterior": float(monto_anterior),
+                            "monto_nuevo": float(gmf_calculado),
+                            "componentes": componentes_montos,
+                            "formula": "SUM(componentes_con_signo)*4/1000"
+                        },
+                        "tipo": "gmf_automatico"
+                    })
+                    trans_gmf.auditoria = auditoria_actual
+                    logger.info(f"✅ GMF actualizado cuenta {cuenta_id}: {monto_anterior} → {gmf_calculado}")
+            else:
+                nueva_gmf = TransaccionFlujoCaja(
+                    fecha=fecha,
+                    concepto_id=concepto_gmf.id,
+                    cuenta_id=cuenta_id,
+                    monto=gmf_calculado,
+                    descripcion="Auto-calculado GMF",
+                    usuario_id=usuario_id or 1,
+                    area=AreaTransaccion.tesoreria,
+                    compania_id=compania_id or 1,
+                    auditoria={
+                        "accion": "creacion_automatica_gmf",
+                        "usuario_id": usuario_id or 1,
+                        "timestamp": datetime.now().isoformat(),
+                        "componentes": componentes_montos,
+                        "formula": "SUM(componentes_con_signo)*4/1000",
+                        "monto_calculado": float(gmf_calculado),
+                        "tipo": "gmf_automatico"
+                    }
+                )
+                self.db.add(nueva_gmf)
+                logger.info(f"✅ GMF creado cuenta {cuenta_id}: {gmf_calculado}")
+
+            self.db.flush()
+            return {
+                "concepto_id": concepto_gmf.id,
+                "concepto_nombre": "GMF",
+                "monto_nuevo": float(gmf_calculado),
+                "cuenta_id": cuenta_id,
+                "componentes": componentes_montos,
+                "base_suma_componentes": float(base_suma),
+                "vigencia_desde": config.fecha_creacion.isoformat() if config and config.fecha_creacion else None
+            }
+        except Exception as e:
+            logger.error(f"❌ Error recalc GMF directo: {e}")
+            return None
     
     def procesar_dependencias_completas_ambos_dashboards(
         self,
@@ -946,12 +1199,12 @@ class DependenciasFlujoCajaService:
                     elif concepto.codigo == 'I':  # Ingreso - debe ser positivo
                         monto_calculado = abs(monto_original)   # Asegurar que sea positivo
                         signo = "(+)"
-                    elif concepto.codigo == 'N':  # Neutral - debe ser positivo
-                        monto_calculado = abs(monto_original)   # Asegurar que sea positivo
-                        signo = "(+)"
+                    elif concepto.codigo == 'N':  # Neutral - respetar el signo ingresado por el usuario
+                        monto_calculado = monto_original        # Mantener el signo tal cual está almacenado
+                        signo = "(±)"
                     else:  # Sin código definido - mantener el monto original
                         monto_calculado = monto_original
-                        signo = "(?)"
+                        signo = "(±)"
                     
                     subtotal_movimiento += monto_calculado
                     conceptos_incluidos.append({
@@ -979,7 +1232,7 @@ class DependenciasFlujoCajaService:
                     # Actualizar existente
                     monto_anterior = subtotal_existente.monto
                     subtotal_existente.monto = subtotal_movimiento
-                    subtotal_existente.descripcion = f"Auto-calculado: I(+) E(-) N(+) de {len(conceptos_incluidos)} conceptos"
+                    subtotal_existente.descripcion = f"Auto-calculado: I(+) E(-) N(±) de {len(conceptos_incluidos)} conceptos"
                     
                     # Actualizar auditoría
                     auditoria_actual = subtotal_existente.auditoria or {}
@@ -991,7 +1244,7 @@ class DependenciasFlujoCajaService:
                             "monto_anterior": float(monto_anterior),
                             "monto_nuevo": float(subtotal_movimiento),
                             "conceptos_incluidos": conceptos_incluidos,
-                            "formula": "SUMA respetando códigos: I(+), E(-), N(+)"
+                            "formula": "SUMA respetando códigos: I(+), E(-), N(±)"
                         },
                         "tipo": "subtotal_movimiento_automatico"
                     })
@@ -1005,7 +1258,7 @@ class DependenciasFlujoCajaService:
                         concepto_id=82,  # SUBTOTAL MOVIMIENTO PAGADURIA
                         cuenta_id=cuenta,
                         monto=subtotal_movimiento,
-                        descripcion=f"Auto-calculado: I(+) E(-) N(+) de {len(conceptos_incluidos)} conceptos",
+                        descripcion=f"Auto-calculado: I(+) E(-) N(±) de {len(conceptos_incluidos)} conceptos",
                         usuario_id=usuario_id or 1,
                         area=AreaTransaccion.pagaduria,
                         compania_id=compania_id or 1,
@@ -1272,6 +1525,99 @@ class DependenciasFlujoCajaService:
                     })
                 else:
                     logger.info(f"⚠️ No se encontró SUB-TOTAL TESORERÍA (ID 50) para fecha {fecha}, cuenta {cuenta}")
+            
+            # NUEVA LÓGICA: SALDO NETO INICIAL PAGADURÍA (ID 4) = SALDO INICIAL (ID 1) + CONSUMO (ID 2) + VENTANILLA (ID 3)
+            for cuenta in cuentas_ids:
+                logger.info(f"📊 Recalculando SALDO NETO INICIAL PAGADURÍA para cuenta {cuenta}...")
+                saldo_inicial = self.db.query(TransaccionFlujoCaja).filter(
+                    TransaccionFlujoCaja.fecha == fecha,
+                    TransaccionFlujoCaja.concepto_id == 1,
+                    TransaccionFlujoCaja.cuenta_id == cuenta
+                ).first()
+                consumo = self.db.query(TransaccionFlujoCaja).filter(
+                    TransaccionFlujoCaja.fecha == fecha,
+                    TransaccionFlujoCaja.concepto_id == 2,
+                    TransaccionFlujoCaja.cuenta_id == cuenta
+                ).first()
+                ventanilla = self.db.query(TransaccionFlujoCaja).filter(
+                    TransaccionFlujoCaja.fecha == fecha,
+                    TransaccionFlujoCaja.concepto_id == 3,
+                    TransaccionFlujoCaja.cuenta_id == cuenta
+                ).first()
+                monto_saldo_inicial = saldo_inicial.monto if saldo_inicial else Decimal('0.00')
+                monto_consumo = consumo.monto if consumo else Decimal('0.00')
+                monto_ventanilla = ventanilla.monto if ventanilla else Decimal('0.00')
+                saldo_neto_inicial = monto_saldo_inicial + monto_consumo + monto_ventanilla
+                if saldo_inicial or consumo or ventanilla:
+                    saldo_neto_existente = self.db.query(TransaccionFlujoCaja).filter(
+                        TransaccionFlujoCaja.fecha == fecha,
+                        TransaccionFlujoCaja.concepto_id == 4,
+                        TransaccionFlujoCaja.cuenta_id == cuenta
+                    ).first()
+                    if saldo_neto_existente:
+                        monto_anterior = saldo_neto_existente.monto
+                        saldo_neto_existente.monto = saldo_neto_inicial
+                        saldo_neto_existente.descripcion = "Auto-calculado: SALDO INICIAL + CONSUMO + VENTANILLA"
+                        auditoria_actual = saldo_neto_existente.auditoria or {}
+                        auditoria_actual.update({
+                            "accion": "actualizacion_automatica",
+                            "usuario_id": usuario_id or 1,
+                            "timestamp": datetime.now().isoformat(),
+                            "cambio": {
+                                "monto_anterior": float(monto_anterior),
+                                "monto_nuevo": float(saldo_neto_inicial),
+                                "componentes": {
+                                    "saldo_inicial_id1": float(monto_saldo_inicial),
+                                    "consumo_id2": float(monto_consumo),
+                                    "ventanilla_id3": float(monto_ventanilla)
+                                },
+                                "formula": "ID1 + ID2 + ID3"
+                            },
+                            "tipo": "saldo_neto_inicial_pagaduria"
+                        })
+                        saldo_neto_existente.auditoria = auditoria_actual
+                        logger.info(f"✅ SALDO NETO INICIAL PAGADURÍA actualizado: Cuenta {cuenta}, ${monto_anterior} → ${saldo_neto_inicial}")
+                    else:
+                        nueva_transaccion_saldo_neto = TransaccionFlujoCaja(
+                            fecha=fecha,
+                            concepto_id=4,
+                            cuenta_id=cuenta,
+                            monto=saldo_neto_inicial,
+                            descripcion="Auto-calculado: SALDO INICIAL + CONSUMO + VENTANILLA",
+                            usuario_id=usuario_id or 1,
+                            area=AreaTransaccion.tesoreria,
+                            compania_id=compania_id or 1,
+                            auditoria={
+                                "accion": "creacion_automatica",
+                                "usuario_id": usuario_id or 1,
+                                "timestamp": datetime.now().isoformat(),
+                                "componentes": {
+                                    "saldo_inicial_id1": float(monto_saldo_inicial),
+                                    "consumo_id2": float(monto_consumo),
+                                    "ventanilla_id3": float(monto_ventanilla)
+                                },
+                                "formula": "ID1 + ID2 + ID3",
+                                "monto_calculado": float(saldo_neto_inicial),
+                                "tipo": "saldo_neto_inicial_pagaduria"
+                            }
+                        )
+                        self.db.add(nueva_transaccion_saldo_neto)
+                        logger.info(f"✅ SALDO NETO INICIAL PAGADURÍA creado: Cuenta {cuenta}, ${saldo_neto_inicial}")
+                    actualizaciones.append({
+                        "concepto_id": 4,
+                        "concepto_nombre": "SALDO NETO INICIAL PAGADURÍA",
+                        "monto_nuevo": saldo_neto_inicial,
+                        "fecha": fecha,
+                        "area": AreaTransaccionSchema.tesoreria,
+                        "cuenta_id": cuenta,
+                        "componentes": {
+                            "saldo_inicial": float(monto_saldo_inicial),
+                            "consumo": float(monto_consumo),
+                            "ventanilla": float(monto_ventanilla)
+                        }
+                    })
+                else:
+                    logger.info(f"⚠️ No hay componentes (ID1, ID2, ID3) para calcular SALDO NETO INICIAL PAGADURÍA en cuenta {cuenta}")
             
             # NUEVA LÓGICA: SALDO TOTAL EN BANCOS (ID 85) = SUBTOTAL SALDO INICIAL PAGADURIA (ID 83) + MOVIMIENTO TESORERIA (ID 84)
             for cuenta in cuentas_ids:

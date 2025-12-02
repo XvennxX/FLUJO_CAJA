@@ -7,6 +7,7 @@ import logging
 from .core.config import get_settings
 from .core.database import engine, Base, SessionLocal
 from .api import api_router
+from fastapi import UploadFile, File, Form
 # from .api.auditoria import router as auditoria_router  # Ya incluido en api_router
 # from .middleware.auditoria_middleware import AuditoriaMiddleware  # Comentado temporalmente
 
@@ -34,7 +35,7 @@ app = FastAPI(
 # Configurar CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.allowed_origins,
+    allow_origins=settings.cors_allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -50,7 +51,8 @@ async def startup_event():
     
     # Verificar TRMs faltantes al iniciar (en background)
     import asyncio
-    asyncio.create_task(verificar_trms_startup())
+    # Ejecutar verificación de TRM de forma síncrona para asegurar recuperación inmediata
+    await verificar_trms_startup()
     
     # Iniciar scheduler de TRM en background
     asyncio.create_task(iniciar_scheduler_trm())

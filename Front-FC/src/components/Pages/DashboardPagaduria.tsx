@@ -212,12 +212,13 @@ const DashboardPagaduria: React.FC = () => {
       });
       
       // 🔧 CORRECCIÓN: Aplicar lógica de signos según el código del concepto
-      // Para conceptos con código definido (E, I, N), aplicar lógica automática
-      // Para conceptos sin código, respetar el valor ingresado
+      // E (Egreso) → Siempre negativo
+      // I (Ingreso) → Siempre positivo  
+      // N (Neutro) o sin código → Respetar el signo ingresado por el usuario
       let montoFinal = monto;
       
-      if (concepto.codigo && concepto.codigo.trim() !== '') {
-        // Aplicar lógica de signos automática para conceptos con código
+      if (concepto.codigo && concepto.codigo.trim() !== '' && concepto.codigo.trim().toUpperCase() !== 'N') {
+        // Aplicar lógica de signos automática SOLO para E (Egreso) e I (Ingreso)
         montoFinal = aplicarSignoSegunCodigo(Math.abs(monto), concepto.codigo);
         console.log('🔧 [PAGADURÍA] Signo aplicado automáticamente:', {
           concepto: concepto.nombre,
@@ -225,17 +226,20 @@ const DashboardPagaduria: React.FC = () => {
           montoAbsoluto: Math.abs(monto),
           codigo: concepto.codigo,
           montoFinal: montoFinal,
-          razon: 'Concepto tiene código definido',
-          logicaAplicada: concepto.codigo === 'E' ? 'Egreso → Negativo' : 
-                         concepto.codigo === 'I' ? 'Ingreso → Positivo' : 
-                         concepto.codigo === 'N' ? 'Neutro → Positivo' : 'Código desconocido'
+          razon: 'Concepto tipo E o I con código definido',
+          logicaAplicada: concepto.codigo.toUpperCase() === 'E' ? 'Egreso → Negativo' : 
+                         concepto.codigo.toUpperCase() === 'I' ? 'Ingreso → Positivo' : 'Código desconocido'
         });
       } else {
-        // Para conceptos sin código, respetar el valor ingresado por el usuario
+        // Para conceptos NEUTROS (N) o sin código, respetar el valor ingresado por el usuario
         montoFinal = monto;
         console.log('✋ [PAGADURÍA] Valor respetado tal como ingresó el usuario:', {
-          monto: montoFinal,
-          razon: 'Concepto sin código definido'
+          concepto: concepto.nombre,
+          codigo: concepto.codigo || 'sin código',
+          montoIngresadoPorUsuario: monto,
+          montoFinal: montoFinal,
+          esNegativo: monto < 0,
+          razon: concepto.codigo?.toUpperCase() === 'N' ? 'Concepto Neutro - el usuario define el signo' : 'Concepto sin código definido'
         });
       }
       

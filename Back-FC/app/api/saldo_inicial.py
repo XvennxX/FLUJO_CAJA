@@ -4,10 +4,11 @@ API para manejar SALDOS INICIALES automáticos
 
 from datetime import datetime, date, timedelta
 from typing import Optional, List
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.services.saldo_inicial_service import SaldoInicialService
+from app.services.importador_saldos_service import ImportadorSaldosService
 from app.schemas.flujo_caja import TransaccionFlujoCajaResponse
 from pydantic import BaseModel
 
@@ -220,3 +221,243 @@ async def auto_procesar_saldos_iniciales(
         raise HTTPException(status_code=400, detail=f"Formato de fecha inválido: {e}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error en procesamiento automático: {str(e)}")
+
+
+class CargueInicialRequest(BaseModel):
+    fecha: str
+    modificaciones: List[dict]
+
+
+@router.post("/guardar-cargue-inicial")
+async def guardar_cargue_inicial(
+    request: CargueInicialRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Guarda el cargue inicial de saldos para una fecha específica
+    """
+    try:
+        from app.models.transacciones_flujo_caja import TransaccionFlujoCaja, AreaTransaccion
+        from app.models.conceptos_flujo_caja import ConceptoFlujoCaja
+        from datetime import datetime
+        
+        fecha_obj = datetime.strptime(request.fecha, '%Y-%m-%d').date()
+        transacciones_creadas = 0
+        
+        # Buscar conceptos necesarios
+        saldo_inicial_concepto = db.query(ConceptoFlujoCaja).filter(
+            ConceptoFlujoCaja.nombre == 'SALDO INICIAL',
+            ConceptoFlujoCaja.area == 'tesoreria'
+        ).first()
+        
+        saldo_dia_anterior_concepto = db.query(ConceptoFlujoCaja).filter(
+            ConceptoFlujoCaja.nombre == 'SALDO DIA ANTERIOR',
+            ConceptoFlujoCaja.area == 'pagaduria'
+        ).first()
+        
+        if not saldo_inicial_concepto or not saldo_dia_anterior_concepto:
+            raise HTTPException(status_code=404, detail="Conceptos SALDO INICIAL o SALDO DIA ANTERIOR no encontrados")
+        
+        for modificacion in request.modificaciones:
+            cuenta_id = modificacion.get('cuenta_id')
+            saldo_inicial = modificacion.get('saldo_inicial')
+            saldo_dia_anterior = modificacion.get('saldo_dia_anterior')
+            
+            # Obtener compania_id de la cuenta
+            from app.models.cuenta_moneda import CuentaMoneda
+            from app.models.cuentas_bancarias import CuentaBancaria
+            
+            cuenta_moneda = db.query(CuentaMoneda).filter(CuentaMoneda.id == cuenta_id).first()
+            if not cuenta_moneda:
+                continue
+                
+            cuenta_bancaria = db.query(CuentaBancaria).filter(CuentaBancaria.id == cuenta_moneda.id_cuenta).first()
+            if not cuenta_bancaria:
+                continue
+            
+            # Guardar SALDO INICIAL TESORERÍA si está definido
+            if saldo_inicial is not None and saldo_inicial != 0:
+                # Buscar transacción existente
+                transaccion_existente = db.query(TransaccionFlujoCaja).filter(
+                    TransaccionFlujoCaja.fecha == fecha_obj,
+                    TransaccionFlujoCaja.concepto_id == saldo_inicial_concepto.id,
+                    TransaccionFlujoCaja.cuenta_id == cuenta_id,
+                    TransaccionFlujoCaja.area == AreaTransaccion.tesoreria
+                ).first()
+                
+                if transaccion_existente:
+                    # Actualizar existente
+                    transaccion_existente.monto = saldo_inicial
+                    transaccion_existente.descripcion = "Cargue inicial manual - Actualizado"
+                else:
+                    # Crear nueva
+                    nueva_transaccion = TransaccionFlujoCaja(
+                        concepto_id=saldo_inicial_concepto.id,
+                        cuenta_id=cuenta_id,
+                        compania_id=cuenta_bancaria.compania_id,
+                        fecha=fecha_obj,
+                        monto=saldo_inicial,
+                        descripcion="Cargue inicial manual",
+                        usuario_id=1,  # TODO: usar usuario actual
+                        area=AreaTransaccion.tesoreria
+                    )
+                    db.add(nueva_transaccion)
+                    transacciones_creadas += 1
+            
+            # Guardar SALDO DÍA ANTERIOR PAGADURÍA si está definido
+            if saldo_dia_anterior is not None and saldo_dia_anterior != 0:
+                # Buscar transacción existente
+                transaccion_existente = db.query(TransaccionFlujoCaja).filter(
+                    TransaccionFlujoCaja.fecha == fecha_obj,
+                    TransaccionFlujoCaja.concepto_id == saldo_dia_anterior_concepto.id,
+                    TransaccionFlujoCaja.cuenta_id == cuenta_id,
+                    TransaccionFlujoCaja.area == AreaTransaccion.pagaduria
+                ).first()
+                
+                if transaccion_existente:
+                    # Actualizar existente
+                    transaccion_existente.monto = saldo_dia_anterior
+                    transaccion_existente.descripcion = "Cargue inicial manual - Actualizado"
+                else:
+                    # Crear nueva
+                    nueva_transaccion = TransaccionFlujoCaja(
+                        concepto_id=saldo_dia_anterior_concepto.id,
+                        cuenta_id=cuenta_id,
+                        compania_id=cuenta_bancaria.compania_id,
+                        fecha=fecha_obj,
+                        monto=saldo_dia_anterior,
+                        descripcion="Cargue inicial manual",
+                        usuario_id=1,  # TODO: usar usuario actual
+                        area=AreaTransaccion.pagaduria
+                    )
+                    db.add(nueva_transaccion)
+                    transacciones_creadas += 1
+        
+        db.commit()
+        
+        return {
+            "success": True,
+            "message": f"Cargue inicial guardado correctamente para {request.fecha}",
+            "transacciones_creadas": transacciones_creadas,
+            "fecha": request.fecha
+        }
+        
+    except ValueError as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=f"Formato de fecha inválido: {e}")
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error guardando cargue inicial: {str(e)}")
+
+
+@router.get("/obtener-saldos")
+async def obtener_saldos_fecha(
+    fecha: str = Query(..., description="Fecha en formato YYYY-MM-DD"),
+    db: Session = Depends(get_db)
+):
+    """
+    Obtiene los saldos existentes para una fecha específica
+    """
+    try:
+        from app.models.transacciones_flujo_caja import TransaccionFlujoCaja, AreaTransaccion
+        from app.models.conceptos_flujo_caja import ConceptoFlujoCaja
+        from datetime import datetime
+        
+        fecha_obj = datetime.strptime(fecha, '%Y-%m-%d').date()
+        
+        # Buscar conceptos
+        saldo_inicial_concepto = db.query(ConceptoFlujoCaja).filter(
+            ConceptoFlujoCaja.nombre == 'SALDO INICIAL',
+            ConceptoFlujoCaja.area == 'tesoreria'
+        ).first()
+        
+        saldo_dia_anterior_concepto = db.query(ConceptoFlujoCaja).filter(
+            ConceptoFlujoCaja.nombre == 'SALDO DIA ANTERIOR',
+            ConceptoFlujoCaja.area == 'pagaduria'
+        ).first()
+        
+        saldos = []
+        
+        if saldo_inicial_concepto:
+            transacciones_tesoreria = db.query(TransaccionFlujoCaja).filter(
+                TransaccionFlujoCaja.fecha == fecha_obj,
+                TransaccionFlujoCaja.concepto_id == saldo_inicial_concepto.id,
+                TransaccionFlujoCaja.area == AreaTransaccion.tesoreria
+            ).all()
+            
+            for t in transacciones_tesoreria:
+                saldos.append({
+                    "cuenta_id": t.cuenta_id,
+                    "saldo_inicial": float(t.monto),
+                    "saldo_dia_anterior": 0
+                })
+        
+        if saldo_dia_anterior_concepto:
+            transacciones_pagaduria = db.query(TransaccionFlujoCaja).filter(
+                TransaccionFlujoCaja.fecha == fecha_obj,
+                TransaccionFlujoCaja.concepto_id == saldo_dia_anterior_concepto.id,
+                TransaccionFlujoCaja.area == AreaTransaccion.pagaduria
+            ).all()
+            
+            for t in transacciones_pagaduria:
+                # Buscar si ya existe en saldos
+                existente = next((s for s in saldos if s["cuenta_id"] == t.cuenta_id), None)
+                if existente:
+                    existente["saldo_dia_anterior"] = float(t.monto)
+                else:
+                    saldos.append({
+                        "cuenta_id": t.cuenta_id,
+                        "saldo_inicial": 0,
+                        "saldo_dia_anterior": float(t.monto)
+                    })
+        
+        return saldos
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Formato de fecha inválido: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error obteniendo saldos: {str(e)}")
+
+
+@router.post("/importar-saldos")
+async def importar_saldos_iniciales(
+    tipo_carga: str = Form(..., description="Tipo de carga: 'mes' o 'dia'"),
+    mes: str = Form(..., description="Mes en formato YYYY-MM"),
+    dia: Optional[str] = Form(None, description="Día específico YYYY-MM-DD si tipo_carga=dia"),
+    sobrescribir: bool = Form(False, description="Si true, sobrescribe transacciones existentes"),
+    archivo_excel: UploadFile = File(..., description="Excel con SALDO INICIAL"),
+    db: Session = Depends(get_db)
+):
+    """
+    Importa saldos iniciales desde UN archivo Excel con campo 'SALDO INICIAL'.
+    Los valores se usan tanto para Tesorería como para Pagaduría.
+    - tipo_carga: 'mes' procesa todos los días anteriores del mes; 'dia' solo el día indicado.
+    - mes: formato YYYY-MM.
+    - dia: requerido solo cuando tipo_carga='dia'.
+    - sobrescribir: si existe una transacción previa la reemplaza.
+    Devuelve resumen de cuentas procesadas, días sin TRM y errores.
+    """
+    from app.services.importador_saldos_service import ImportadorSaldosService
+    try:
+        # Validar tipo_carga
+        if tipo_carga not in ('mes', 'dia'):
+            raise HTTPException(status_code=400, detail="tipo_carga debe ser 'mes' o 'dia'")
+        
+        contenido = await archivo_excel.read()
+        
+        resultado = ImportadorSaldosService.importar(
+            db=db,
+            tipo_carga=tipo_carga,
+            mes=mes,
+            dia=dia,
+            sobrescribir=sobrescribir,
+            archivo_excel=contenido,
+            usuario_id=1  # TODO: reemplazar por usuario autenticado
+        )
+        return {"success": True, **resultado}
+    except HTTPException:
+        raise
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error importando saldos: {str(e)}")

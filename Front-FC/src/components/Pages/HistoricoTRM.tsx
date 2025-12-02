@@ -9,7 +9,7 @@ interface TRMHistorico {
 }
 
 const HistoricoTRM: React.FC = () => {
-  const { trm: currentTRM, getTRMRange } = useTRM();
+  const { trm: currentTRM } = useTRM();
   const [trmData, setTrmData] = useState<TRMHistorico[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -20,6 +20,52 @@ const HistoricoTRM: React.FC = () => {
     end: ''
   });
 
+  // Construye una serie continua día a día entre start y end, rellenando con la última TRM conocida
+  const buildContinuousSeries = (
+    rows: TRMHistorico[],
+    start?: string,
+    end?: string
+  ): TRMHistorico[] => {
+    if (!rows || rows.length === 0) return [];
+    // Parseo que respeta la fecha sin conversión de zona horaria
+    const parse = (s: string) => {
+      const [y, m, d] = s.split('-').map(Number);
+      return new Date(y, m - 1, d);
+    };
+    const fmt = (d: Date) => {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    };
+
+    // Ordenar ascendente por fecha para construir hacia adelante
+    const sortedAsc = [...rows].sort((a, b) => (a.fecha > b.fecha ? 1 : a.fecha < b.fecha ? -1 : 0));
+    const minDate = parse(sortedAsc[0].fecha);
+    const maxDate = parse(sortedAsc[sortedAsc.length - 1].fecha);
+    const startDate = start ? parse(start) : minDate;
+    const endDate = end ? parse(end) : maxDate;
+
+    // Crear mapa rápido por fecha
+    const map = new Map<string, TRMHistorico>();
+    for (const r of rows) map.set(r.fecha, r);
+
+    const outAsc: TRMHistorico[] = [];
+    let lastKnown: TRMHistorico | null = null;
+    // Recorremos de start a end (ascendente) y luego invertimos para presentar descendente
+    for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+      const key = fmt(d);
+      const hit = map.get(key);
+      if (hit) {
+        outAsc.push(hit);
+        lastKnown = hit;
+      } else if (lastKnown) {
+        outAsc.push({ fecha: key, valor: lastKnown.valor, fecha_creacion: new Date().toISOString() });
+      }
+    }
+    return outAsc.reverse();
+  };
+
   // Función para obtener el rango de TRM
   const fetchTRMData = async () => {
     try {
@@ -27,6 +73,7 @@ const HistoricoTRM: React.FC = () => {
       
       let startDate = dateRange.start;
       let endDate = dateRange.end;
+      const today = new Date().toISOString().split('T')[0];
       
       // Si se selecciona mes/año específico, calcular rango
       if (selectedMonth && selectedYear) {
@@ -46,9 +93,8 @@ const HistoricoTRM: React.FC = () => {
         url += `&fecha_inicio=${startDate}`;
       }
       
-      if (endDate) {
-        url += `&fecha_fin=${endDate}`;
-      }
+      // Siempre traer hasta hoy si no hay fin explícito
+      url += `&fecha_fin=${endDate || today}`;
       
       const headers = {
         'Content-Type': 'application/json',
@@ -60,8 +106,14 @@ const HistoricoTRM: React.FC = () => {
         throw new Error('Error al obtener rango de TRM');
       }
       
-      const data = await response.json();
-      setTrmData(data);
+      const data: TRMHistorico[] = await response.json();
+      // Densificar serie para mostrar días faltantes con última TRM conocida
+      const continuous = buildContinuousSeries(
+        data,
+        startDate || undefined,
+        (endDate || today)
+      );
+      setTrmData(continuous);
     } catch (err) {
       console.error('Error fetching TRM data:', err);
     } finally {
@@ -73,13 +125,23 @@ const HistoricoTRM: React.FC = () => {
     fetchTRMData();
   }, [selectedMonth, selectedYear, dateRange]);
 
+  // Si cambia la TRM actual (p. ej. después de una verificación/backfill), refrescar el histórico
+  useEffect(() => {
+    if (currentTRM?.fecha) {
+      fetchTRMData();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentTRM?.fecha]);
+
   // Filtrar datos por término de búsqueda
   const filteredData = trmData.filter(item => {
     const searchLower = searchTerm.toLowerCase();
+    const [y, m, d] = item.fecha.split('-').map(Number);
+    const dateStr = new Date(y, m - 1, d).toLocaleDateString('es-CO');
     return (
       item.fecha.includes(searchLower) ||
       item.valor.toString().includes(searchLower) ||
-      new Date(item.fecha).toLocaleDateString('es-CO').includes(searchLower)
+      dateStr.includes(searchLower)
     );
   });
 
@@ -100,14 +162,18 @@ const HistoricoTRM: React.FC = () => {
 
   // Función para exportar a CSV
   const exportToCSV = () => {
-    const headers = ['Fecha', 'Valor TRM', 'Fecha Creación'];
+    const headers = ['Fecha Vigencia', 'Valor TRM', 'Fecha Creación'];
     const csvData = [
       headers.join(','),
-      ...filteredData.map(item => [
-        item.fecha,
-        item.valor.toString(),
-        new Date(item.fecha_creacion).toLocaleDateString('es-CO')
-      ].join(','))
+      ...filteredData.map(item => {
+        const [y, m, d] = item.fecha.split('-').map(Number);
+        const fechaFormateada = new Date(y, m - 1, d).toLocaleDateString('es-CO');
+        return [
+          fechaFormateada,
+          item.valor.toString(),
+          new Date(item.fecha_creacion).toLocaleDateString('es-CO')
+        ].join(',');
+      })
     ].join('\\n');
 
     const blob = new Blob([csvData], { type: 'text/csv;charset=utf-8;' });
@@ -338,7 +404,7 @@ const HistoricoTRM: React.FC = () => {
             <thead className="bg-gray-50 dark:bg-gray-700">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                  Fecha
+                  Fecha Vigencia
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                   Valor TRM
@@ -368,10 +434,16 @@ const HistoricoTRM: React.FC = () => {
                         <Calendar className="w-4 h-4 text-gray-400 mr-2" />
                         <div>
                           <div className="text-sm font-medium text-gray-900 dark:text-white">
-                            {new Date(item.fecha).toLocaleDateString('es-CO')}
+                            {(() => {
+                              const [y, m, d] = item.fecha.split('-').map(Number);
+                              return new Date(y, m - 1, d).toLocaleDateString('es-CO');
+                            })()}
                           </div>
                           <div className="text-sm text-gray-500 dark:text-gray-400">
-                            {new Date(item.fecha).toLocaleDateString('es-CO', { weekday: 'long' })}
+                            {(() => {
+                              const [y, m, d] = item.fecha.split('-').map(Number);
+                              return new Date(y, m - 1, d).toLocaleDateString('es-CO', { weekday: 'long' });
+                            })()}
                           </div>
                         </div>
                       </div>

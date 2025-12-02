@@ -15,6 +15,7 @@ Scripts de configuración inicial:
 - Creación de datos iniciales
 - Configuración de bancos y compañías
 - Generación de hashes de seguridad
+- Inicialización de configuración GMF por cuenta (`initialize_gmf_defaults.py`)
 
 ### 🗄️ **`migrations/`**
 Archivos SQL para migraciones de base de datos:
@@ -36,6 +37,9 @@ scripts/trm/start_trm_service.bat
 
 # Configuración inicial
 python scripts/setup/create_initial_data.py
+
+# Inicializar configuración GMF por cuenta (crea una activa por cuenta si no existe)
+python scripts/setup/initialize_gmf_defaults.py
 
 # Ver usuarios
 python scripts/utils/listar_usuarios_api.py

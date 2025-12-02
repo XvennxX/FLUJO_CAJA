@@ -67,7 +67,8 @@ const Sidebar: React.FC<SidebarProps> = ({ currentPage, onPageChange, isCollapse
         icon: Shield,
         items: [
           { id: 'auditoria', label: 'Auditoría', icon: Shield },
-          { id: 'usuarios', label: 'Usuarios', icon: Users }
+          { id: 'usuarios', label: 'Usuarios', icon: Users },
+          { id: 'cargue-inicial', label: 'Cargue Inicial', icon: Calendar }
         ]
       }
     ];

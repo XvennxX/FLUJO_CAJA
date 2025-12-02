@@ -93,6 +93,56 @@ def get_company_bank_accounts_test(company_id: int, db: Session = Depends(get_db
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error interno del servidor: {str(e)}"
         )
+@router.get("/todas-las-cuentas")
+def get_all_bank_accounts(db: Session = Depends(get_db)):
+    """Obtener todas las cuentas bancarias del sistema para cargue inicial"""
+    try:
+        # Query que une cuentas_bancarias con cuenta_moneda para obtener todas las combinaciones cuenta-moneda
+        from sqlalchemy import text
+        query = text("""
+            SELECT 
+                cb.id as cuenta_id,
+                cb.numero_cuenta,
+                cb.compania_id,
+                cb.banco_id,
+                cm.id as cuenta_moneda_id,
+                cm.moneda,
+                b.nombre as banco_nombre,
+                c.nombre as compania_nombre
+            FROM cuentas_bancarias cb
+            JOIN cuenta_moneda cm ON cb.id = cm.id_cuenta
+            JOIN bancos b ON cb.banco_id = b.id
+            JOIN companias c ON cb.compania_id = c.id
+            ORDER BY cm.id
+        """)
+        
+        result = db.execute(query)
+        cuentas = result.fetchall()
+        
+        cuentas_formateadas = []
+        for cuenta in cuentas:
+            cuentas_formateadas.append({
+                "id": cuenta.cuenta_moneda_id,  # Usar cuenta_moneda_id como ID principal
+                "cuenta_bancaria_id": cuenta.cuenta_id,
+                "numero_cuenta": cuenta.numero_cuenta,
+                "nombre": f"{cuenta.banco_nombre} - {cuenta.numero_cuenta}",
+                "compania_id": cuenta.compania_id,
+                "compania_nombre": cuenta.compania_nombre,
+                "banco_nombre": cuenta.banco_nombre,
+                "moneda": cuenta.moneda,
+                "saldo_inicial_tesoreria": 0,
+                "saldo_dia_anterior_pagaduria": 0
+            })
+        
+        return cuentas_formateadas
+        
+    except Exception as e:
+        logger.error(f"Error al obtener cuentas bancarias: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error interno del servidor: {str(e)}"
+        )
+
 @router.get("/companies/{company_id}", response_model=List[CuentaBancariaResponse])
 def get_company_bank_accounts(company_id: int, db: Session = Depends(get_db)):
     """Obtener todas las cuentas bancarias de una compañía"""
@@ -108,7 +158,8 @@ def get_company_bank_accounts(company_id: int, db: Session = Depends(get_db)):
             numero_cuenta=cuenta.numero_cuenta,
             compania_id=cuenta.compania_id,
             banco_id=cuenta.banco_id,
-            moneda=cuenta.moneda,
+            tipo_cuenta=cuenta.tipo_cuenta,
+            monedas=[m.moneda for m in cuenta.monedas],
             banco_nombre=banco.nombre if banco else None,
             compania_nombre=compania.nombre if compania else None
         )

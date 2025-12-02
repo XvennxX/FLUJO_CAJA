@@ -1,4 +1,5 @@
 from .usuarios import Usuario
+from .roles import Rol, Permiso
 from .bancos import Banco
 from .companias import Compania
 from .conceptos_flujo_caja import ConceptoFlujoCaja, TipoMovimiento, AreaConcepto, TipoDependencia
@@ -8,9 +9,11 @@ from .transacciones_flujo_caja import TransaccionFlujoCaja, AreaTransaccion
 from .notificaciones import Notificacion
 from .trm import TRM
 from .conciliacion_contable import ConciliacionContable
+from .gmf_config import GMFConfig
 
 __all__ = [
     "Usuario",
+    "Rol", "Permiso",
     "Banco", 
     "Compania",
     "ConceptoFlujoCaja", "TipoMovimiento", "AreaConcepto", "TipoDependencia",
@@ -19,5 +22,6 @@ __all__ = [
     "TransaccionFlujoCaja", "AreaTransaccion",
     "Notificacion",
     "TRM",
-    "ConciliacionContable"
+    "ConciliacionContable",
+    "GMFConfig"
 ]

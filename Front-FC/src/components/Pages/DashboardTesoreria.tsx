@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Building2, Download, RefreshCw, AlertCircle } from 'lucide-react';
+import { Building2, Download, RefreshCw, AlertCircle, Settings, Check, X } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { formatCurrency } from '../../utils/formatters';
 import { useTRMByDate } from '../../hooks/useTRMByDate';
@@ -36,6 +36,32 @@ interface BankAccount {
   };
 }
 
+interface GMFConfig {
+  cuenta_id: number;
+  conceptos_seleccionados: string[];
+}
+
+interface GMFModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  cuentaId: number;
+  conceptosActuales: number[];
+  onSave: (conceptos: number[]) => void;
+}
+
+interface GMFConfig {
+  cuenta_id: number;
+  conceptos_seleccionados: number[];
+}
+
+interface GMFModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  cuentaId: number;
+  conceptosActuales: number[];
+  onSave: (conceptos: number[]) => void;
+}
+
 const DashboardTesoreria: React.FC = () => {
   const { user } = useAuth();
   // Obtener la fecha actual en formato YYYY-MM-DD
@@ -60,7 +86,32 @@ const DashboardTesoreria: React.FC = () => {
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [loading, setLoading] = useState(true);
   
-
+  // Estados para GMF
+  const [gmfConfig, setGmfConfig] = useState<Map<number, number[]>>(new Map());
+  const [gmfModalOpen, setGmfModalOpen] = useState(false);
+  const [currentGMFAccount, setCurrentGMFAccount] = useState<number | null>(null);
+  const [loadingGMFConfig, setLoadingGMFConfig] = useState(false);
+  // Lista fija de conceptos permitidos para GMF
+  const CONCEPTOS_GMF_PERMITIDOS: number[] = [
+    5,  // PAGOS INTERCOMPAÑÍAS
+    9,  // APERTURA ACTIVO FINANCIERO
+    12, // CANCELACIÓN KW
+    13, // PAGO INTERESES KW
+    29, // EGRESO DIVIDENDOS
+    34, // FORWARD (E)
+    35, // FORWARD (I)
+    43, // EMBARGOS
+    31, // SWAP
+    47, // COMISIONES
+    36, // COMPRA DIVISAS OTRAS ÁREAS
+    26, // COMPRA ACCIONES
+    22, // LLAMADO CAPITAL FCP
+    32, // OPCIONES (E)
+    33, // OPCIONES (I)
+    45, // OTROS
+    25, // TRASLADO ARL
+    46, // IMPUESTOS
+  ];
   
   // Estado para multi-moneda
   const [usarMultiMoneda, setUsarMultiMoneda] = useState<boolean>(false);
@@ -149,6 +200,151 @@ const DashboardTesoreria: React.FC = () => {
     setBancosFiltrados(nuevosBancos);
   };
 
+  // Funciones para GMF
+  const cargarConfiguracionGMF = async () => {
+    if (!user || (user.role !== 'administrador' && user.role !== 'tesoreria')) return;
+    
+    setLoadingGMFConfig(true);
+    try {
+      const token = localStorage.getItem('access_token');
+      
+      // Cargar configuraciones para todas las cuentas bancarias
+      const configMap = new Map<number, number[]>();
+      
+      for (const account of bankAccounts) {
+        const response = await fetch(`http://localhost:8000/api/v1/gmf-config/${account.id}`, {
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token && { Authorization: `Bearer ${token}` })
+          }
+        });
+        
+        if (response.ok) {
+          const config = await response.json();
+          if (config.conceptos_seleccionados && config.conceptos_seleccionados.length > 0) {
+            // Asegurar que siempre sean números (IDs)
+            const ids = config.conceptos_seleccionados.map((item: any) => {
+              if (typeof item === 'object' && item.id) return Number(item.id);
+              return Number(item);
+            }).filter((id: number) => !isNaN(id) && CONCEPTOS_GMF_PERMITIDOS.includes(id));
+            // Si queda vacío tras filtrado, usar todos permitidos
+            configMap.set(account.id, ids.length ? ids : [...CONCEPTOS_GMF_PERMITIDOS]);
+          } else {
+            // Si no hay configuración, usar todos los permitidos por defecto
+            configMap.set(account.id, [...CONCEPTOS_GMF_PERMITIDOS]);
+          }
+        }
+      }
+      
+      setGmfConfig(configMap);
+    } catch (error) {
+      console.error('Error cargando configuración GMF:', error);
+    } finally {
+      setLoadingGMFConfig(false);
+    }
+  };
+
+  const guardarConfiguracionGMF = async (cuentaId: number, conceptos: number[]) => {
+    if (!user || (user.role !== 'administrador' && user.role !== 'tesoreria')) return;
+    
+    try {
+      const token = localStorage.getItem('access_token');
+      const response = await fetch('http://localhost:8000/api/v1/gmf-config/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token && { Authorization: `Bearer ${token}` })
+        },
+        body: JSON.stringify({
+          cuenta_bancaria_id: cuentaId,
+          conceptos_seleccionados: conceptos  // Enviar IDs directamente
+        })
+      });
+      
+      if (response.ok) {
+        // Actualizar configuración local
+        const nuevaConfig = new Map(gmfConfig);
+        nuevaConfig.set(cuentaId, conceptos);
+        setGmfConfig(nuevaConfig);
+      }
+    } catch (error) {
+      console.error('Error guardando configuración GMF:', error);
+    }
+  };
+
+  const calcularGMF = (cuentaId: number): number => {
+    const conceptosIds = gmfConfig.get(cuentaId) || [];
+    if (conceptosIds.length === 0) return 0;
+    
+    let sumaConceptos = 0;
+    
+    // Sumar montos usando IDs directamente
+    conceptosIds.forEach(conceptoId => {
+      const monto = obtenerMonto(conceptoId, cuentaId);
+      sumaConceptos += monto;
+    });
+    
+    // Aplicar fórmula GMF: (suma * 4) / 1000
+    const gmfCalculado = (sumaConceptos * 4) / 1000;
+    
+    return gmfCalculado;
+  };
+
+  const abrirModalGMF = (cuentaId: number) => {
+    if (!user || (user.role !== 'administrador' && user.role !== 'tesoreria')) return;
+    
+    setCurrentGMFAccount(cuentaId);
+    
+    // Si no hay configuración, asignar todos los permitidos por defecto
+    if (!gmfConfig.has(cuentaId)) {
+      const nuevaConfig = new Map(gmfConfig);
+      nuevaConfig.set(cuentaId, [...CONCEPTOS_GMF_PERMITIDOS]);
+      setGmfConfig(nuevaConfig);
+    }
+    
+    setGmfModalOpen(true);
+  };
+
+  const cerrarModalGMF = () => {
+    setCurrentGMFAccount(null);
+    setGmfModalOpen(false);
+  };
+
+  const guardarConceptosGMF = async (cuentaId: number) => {
+    if (!cuentaId) return;
+    
+    const conceptos = gmfConfig.get(cuentaId) || [];
+    
+    // Guardar configuración y esperar respuesta
+    await guardarConfiguracionGMF(cuentaId, conceptos);
+    
+    // 🔄 IMPORTANTE: Forzar recálculo de GMF en backend después de guardar config
+    try {
+      const token = localStorage.getItem('access_token');
+      await fetch('http://localhost:8000/api/v1/gmf/recalculate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token && { Authorization: `Bearer ${token}` })
+        },
+        body: JSON.stringify({
+          fecha: selectedDate,
+          cuentaId: cuentaId
+        })
+      });
+      
+      // Recargar configuración GMF para asegurar que se actualice en el estado
+      await cargarConfiguracionGMF();
+      
+      // Recargar transacciones para mostrar el GMF actualizado
+      await cargarTransacciones(true);
+    } catch (error) {
+      console.error('Error forzando recálculo GMF:', error);
+    }
+    
+    cerrarModalGMF();
+  };
+
   const handleLimpiarFiltros = () => {
     setCompaniasFiltradas([]);
     setBancosFiltrados([]);
@@ -215,8 +411,8 @@ const DashboardTesoreria: React.FC = () => {
           return -valorAbsoluto;
         case 'I': // Ingresos - siempre positivos
           return valorAbsoluto;
-        case 'N': // Neutro - siempre positivos
-          return valorAbsoluto;
+        case 'N': // Neutro - mantener signo original de BD (puede ser positivo o negativo)
+          return valor; // NO convertir a absoluto, respetar el signo de la BD
         default: // Para cualquier otro código no reconocido, devolver valor original
           return valor;
       }
@@ -288,6 +484,13 @@ const DashboardTesoreria: React.FC = () => {
   useEffect(() => {
     console.log('🔄 Transacciones actualizadas');
   }, [transacciones]);
+
+  // Cargar configuración GMF cuando cambie la fecha o las cuentas bancarias
+  useEffect(() => {
+    if (bankAccounts.length > 0) {
+      cargarConfiguracionGMF();
+    }
+  }, [selectedDate, bankAccounts]);
 
   // Función para convertir conceptos del backend al formato del frontend
   const convertirConceptosParaTabla = (conceptosBackend: ConceptoFlujoCaja[]): Concepto[] => {
@@ -792,8 +995,14 @@ const DashboardTesoreria: React.FC = () => {
         return montoOriginal; // Si no encontramos el concepto, devolver valor original
       }
       
-      // Aplicar la lógica de signos según el código
-      const resultado = aplicarSignoSegunCodigo(montoOriginal, concepto.codigo || '');
+      // Para conceptos neutros (N) o sin código, devolver el valor tal como está en BD
+      // Solo aplicar lógica de signos para E (Egreso) e I (Ingreso)
+      if (!concepto.codigo || concepto.codigo.trim() === '' || concepto.codigo.trim().toUpperCase() === 'N') {
+        return montoOriginal; // Respetar el signo almacenado en BD
+      }
+      
+      // Aplicar la lógica de signos SOLO para conceptos E e I
+      const resultado = aplicarSignoSegunCodigo(montoOriginal, concepto.codigo);
       
       return isFinite(resultado) ? resultado : 0;
       
@@ -836,12 +1045,13 @@ const DashboardTesoreria: React.FC = () => {
       });
       
       // 🔧 CORRECCIÓN: Aplicar lógica de signos según el código del concepto
-      // Para conceptos con código definido (E, I, N), aplicar lógica automática
-      // Para conceptos sin código, respetar el valor ingresado
+      // E (Egreso) → Siempre negativo
+      // I (Ingreso) → Siempre positivo  
+      // N (Neutro) o sin código → Respetar el signo ingresado por el usuario
       let montoFinal = monto;
       
-      if (concepto.codigo && concepto.codigo.trim() !== '') {
-        // Aplicar lógica de signos automática para conceptos con código
+      if (concepto.codigo && concepto.codigo.trim() !== '' && concepto.codigo.trim().toUpperCase() !== 'N') {
+        // Aplicar lógica de signos automática SOLO para E (Egreso) e I (Ingreso)
         montoFinal = aplicarSignoSegunCodigo(Math.abs(monto), concepto.codigo);
         console.log('🔧 Signo aplicado automáticamente:', {
           concepto: concepto.nombre,
@@ -849,17 +1059,20 @@ const DashboardTesoreria: React.FC = () => {
           montoAbsoluto: Math.abs(monto),
           codigo: concepto.codigo,
           montoFinal: montoFinal,
-          razon: 'Concepto tiene código definido',
-          logicaAplicada: concepto.codigo === 'E' ? 'Egreso → Negativo' : 
-                         concepto.codigo === 'I' ? 'Ingreso → Positivo' : 
-                         concepto.codigo === 'N' ? 'Neutro → Positivo' : 'Código desconocido'
+          razon: 'Concepto tipo E o I con código definido',
+          logicaAplicada: concepto.codigo.toUpperCase() === 'E' ? 'Egreso → Negativo' : 
+                         concepto.codigo.toUpperCase() === 'I' ? 'Ingreso → Positivo' : 'Código desconocido'
         });
       } else {
-        // Para conceptos sin código, respetar el valor ingresado por el usuario
+        // Para conceptos NEUTROS (N) o sin código, respetar el valor ingresado por el usuario
         montoFinal = monto;
         console.log('✋ Valor respetado tal como ingresó el usuario:', {
-          monto: montoFinal,
-          razon: 'Concepto sin código definido'
+          concepto: concepto.nombre,
+          codigo: concepto.codigo || 'sin código',
+          montoIngresadoPorUsuario: monto,
+          montoFinal: montoFinal,
+          esNegativo: monto < 0,
+          razon: concepto.codigo?.toUpperCase() === 'N' ? 'Concepto Neutro - el usuario define el signo' : 'Concepto sin código definido'
         });
       }
       
@@ -1223,6 +1436,38 @@ const DashboardTesoreria: React.FC = () => {
                           )}
                         </td>
                       );
+                    } else if (concepto.nombre === 'GMF') {
+                      // Celda especial para GMF - LEER VALOR PERSISTIDO en BD, no calcular localmente
+                      // El backend ya persiste automáticamente el GMF cuando se crean/actualizan transacciones
+                      const valorGMFPersistido = concepto.id ? obtenerMonto(concepto.id, account.id) : 0;
+                      const valorSeguro = safeNumericValue(valorGMFPersistido);
+                      
+                      return (
+                        <td key={`data-${account.cuenta_moneda_id}`} className="border border-gray-400 dark:border-gray-500 px-1 py-1 text-center text-xs bg-orange-50 dark:bg-orange-900/20 relative">
+                          <div className="flex items-center justify-between">
+                            <div className="flex-1 text-center">
+                              {valorSeguro !== 0 ? (
+                                <span className={`font-medium ${valorSeguro < 0 ? 'text-red-700 dark:text-red-400' : 'text-green-700 dark:text-green-400'}`}>
+                                  {valorSeguro < 0 ? `(${formatCurrency(Math.abs(valorSeguro))})` : formatCurrency(valorSeguro)}
+                                </span>
+                              ) : (
+                                <span className="text-gray-400 dark:text-gray-500">—</span>
+                              )}
+                            </div>
+                            
+                            {/* Ícono de configuración - Alineado a la derecha */}
+                            {(user?.role === 'administrador' || user?.role === 'tesoreria') && (
+                              <button
+                                onClick={() => abrirModalGMF(account.id)}
+                                className="p-1 text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-200 transition-colors hover:bg-green-100 dark:hover:bg-green-900/20 rounded"
+                                title="Configurar conceptos GMF"
+                              >
+                                <Settings className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      );
                     } else {
                       // Para otros conceptos, usar celda editable normal
                       const valorCuenta = concepto.id ? obtenerMontoConSignos(concepto.id, account.id, account.tipo_moneda) : 0;
@@ -1442,6 +1687,119 @@ const DashboardTesoreria: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Modal de configuración GMF */}
+      {gmfModalOpen && currentGMFAccount && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full m-4">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                  Configurar Conceptos GMF
+                </h3>
+                <button
+                  onClick={cerrarModalGMF}
+                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+
+              <div className="mb-4">
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+                  Selecciona los conceptos que se incluirán en el cálculo del GMF para esta cuenta:
+                </p>
+                
+                {loadingGMFConfig ? (
+                                  <div className="flex items-center justify-center py-8">
+                                    <RefreshCw className="w-6 h-6 animate-spin text-gray-400" />
+                                    <span className="ml-2 text-gray-600 dark:text-gray-400">Cargando configuración...</span>
+                                  </div>
+                                ) : (
+                                  <div>
+                                    <div className="flex justify-between items-center mb-2 text-xs text-gray-600 dark:text-gray-400">
+                                      <span>Seleccionados: {gmfConfig.get(currentGMFAccount)?.length || 0} / {CONCEPTOS_GMF_PERMITIDOS.length}</span>
+                                      <div className="space-x-2">
+                                        <button
+                                          onClick={() => {
+                                            const nuevaConfig = new Map(gmfConfig);
+                                            nuevaConfig.set(currentGMFAccount, [...CONCEPTOS_GMF_PERMITIDOS]);
+                                            setGmfConfig(nuevaConfig);
+                                          }}
+                                          className="px-2 py-1 border rounded text-xs hover:bg-gray-50 dark:hover:bg-gray-700"
+                                        >Todos</button>
+                                        <button
+                                          onClick={() => {
+                                            const nuevaConfig = new Map(gmfConfig);
+                                            nuevaConfig.set(currentGMFAccount, []);
+                                            setGmfConfig(nuevaConfig);
+                                          }}
+                                          className="px-2 py-1 border rounded text-xs hover:bg-gray-50 dark:hover:bg-gray-700"
+                                        >Limpiar</button>
+                                      </div>
+                                    </div>
+                                    <div className="max-h-64 overflow-y-auto border rounded-md p-3 space-y-2">
+                                      {conceptosTesoreria
+                                        .filter(concepto => CONCEPTOS_GMF_PERMITIDOS.includes(concepto.id || 0))
+                                        .map((concepto) => {
+                                          const isSelected = gmfConfig.get(currentGMFAccount)?.includes(concepto.id || 0) || false;
+                                          return (
+                                            <label key={concepto.id} className="flex items-center space-x-2 cursor-pointer">
+                                              <input
+                                                type="checkbox"
+                                                checked={isSelected}
+                                                onChange={(e) => {
+                                                  const conceptosActuales = gmfConfig.get(currentGMFAccount) || [];
+                                                  let nuevosConceptos;
+                                                  if (e.target.checked) {
+                                                    nuevosConceptos = [...conceptosActuales, concepto.id || 0];
+                                                  } else {
+                                                    nuevosConceptos = conceptosActuales.filter(id => id !== concepto.id);
+                                                  }
+                                                  const nuevaConfig = new Map(gmfConfig);
+                                                  nuevaConfig.set(currentGMFAccount, nuevosConceptos);
+                                                  setGmfConfig(nuevaConfig);
+                                                }}
+                                                className="w-4 h-4 text-orange-600 border-gray-300 rounded focus:ring-orange-500"
+                                              />
+                                              <span className="text-sm text-gray-700 dark:text-gray-300">{concepto.nombre}</span>
+                                            </label>
+                                          );
+                                        })}
+                                    </div>
+                                  </div>
+                                )}
+              </div>
+
+              <div className="flex justify-end space-x-3">
+                <button
+                  onClick={cerrarModalGMF}
+                  className="px-4 py-2 text-gray-600 dark:text-gray-400 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={() => guardarConceptosGMF(currentGMFAccount)}
+                  disabled={loadingGMFConfig}
+                  className="px-4 py-2 bg-orange-600 text-white rounded-md hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center"
+                >
+                  {loadingGMFConfig ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                      Guardando...
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-4 h-4 mr-2" />
+                      Guardar
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

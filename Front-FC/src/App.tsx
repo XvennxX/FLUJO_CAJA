@@ -21,6 +21,7 @@ import Help from './components/Pages/Help';
 import AdminPanel from './components/Pages/AdminPanel';
 import Conceptos from './components/Pages/Conceptos';
 import HistoricoTRM from './components/Pages/HistoricoTRM';
+import CargueInicial from './components/Pages/CargueInicial';
 import SessionWarningModal from './components/Session/SessionWarningModal';
 import SessionToast from './components/Session/SessionToast';
 
@@ -80,6 +81,8 @@ const AppContent: React.FC = () => {
         return 'Consolidado';
       case 'usuarios':
         return 'Gestión de Usuarios';
+      case 'cargue-inicial':
+        return 'Cargue Inicial de Saldos';
       case 'perfil':
         return 'Mi Perfil de Usuario';
       case 'configuracion':
@@ -129,6 +132,8 @@ const AppContent: React.FC = () => {
         return 'Reportes detallados y análisis financiero consolidado';
       case 'usuarios':
         return 'Administración de usuarios del sistema';
+      case 'cargue-inicial':
+        return 'Configura saldos iniciales para días anteriores';
       case 'perfil':
         return 'Gestiona tu información personal y preferencias';
       case 'configuracion':
@@ -171,6 +176,8 @@ const AppContent: React.FC = () => {
         return <Reports />;
       case 'usuarios':
         return <Users />;
+      case 'cargue-inicial':
+        return <CargueInicial />;
       case 'perfil':
         return <Profile />;
       case 'configuracion':
