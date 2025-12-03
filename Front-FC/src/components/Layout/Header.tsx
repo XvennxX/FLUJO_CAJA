@@ -4,6 +4,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useNotifications } from '../../hooks/useNotifications';
 import NotificationDropdown from './NotificationDropdown';
+import SessionIndicator from '../Session/SessionIndicator';
 
 interface HeaderProps {
   title: string;
@@ -115,24 +116,24 @@ const Header: React.FC<HeaderProps> = ({ title, subtitle, onPageChange, onToggle
   };
 
   return (
-    <header className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4">
-      <div className="flex items-center justify-between">
+    <header className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-3">
+      <div className="flex items-center justify-between h-12">
         {/* Left Section - Toggle and Title */}
         <div className="flex items-center space-x-4">
           {/* Sidebar Toggle Button */}
           {onToggleSidebar && (
             <button
               onClick={onToggleSidebar}
-              className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+              className="p-2.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center justify-center"
             >
-              <Menu className="h-5 w-5 text-gray-500 dark:text-gray-400" />
+              <Menu className="h-6 w-6 text-gray-500 dark:text-gray-400" />
             </button>
           )}
           
           {/* Page Title Section */}
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{title}</h1>
-            <p className="text-sm text-gray-600 dark:text-gray-300 capitalize">{subtitle || currentDate}</p>
+          <div className="flex flex-col justify-center">
+            <h1 className="text-xl font-bold text-gray-900 dark:text-white leading-tight">{title}</h1>
+            <p className="text-xs text-gray-600 dark:text-gray-300 capitalize leading-tight">{subtitle || currentDate}</p>
           </div>
         </div>
 
@@ -147,6 +148,9 @@ const Header: React.FC<HeaderProps> = ({ title, subtitle, onPageChange, onToggle
               className="pl-10 pr-4 py-2 w-80 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-bolivar-500 focus:border-transparent text-sm"
             />
           </div>
+
+          {/* Session Indicator */}
+          <SessionIndicator compact={true} showInHeader={true} />
 
           {/* Notifications */}
           <div className="relative" ref={notificationRef}>

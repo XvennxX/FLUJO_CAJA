@@ -48,7 +48,7 @@ export const useConceptosFlujoCaja = (): UseConceptosFlujoCajaResult => {
       
       console.log('📤 Headers being sent:', headers);
       
-      const response = await fetch('http://localhost:8000/api/v1/api/conceptos-flujo-caja/', {
+      const response = await fetch('http://localhost:8000/api/v1/api/conceptos-flujo-caja/?activos_only=false', {
         headers
       });
 

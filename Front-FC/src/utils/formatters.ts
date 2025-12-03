@@ -1,4 +1,4 @@
-export const formatCurrency = (amount: number): string => {
+export const formatCurrency = (amount: number, currency?: string): string => {
   // Validar que el amount sea un número válido
   if (!isFinite(amount) || isNaN(amount)) {
     console.warn('Valor inválido pasado a formatCurrency:', amount);
@@ -6,11 +6,12 @@ export const formatCurrency = (amount: number): string => {
   }
   
   try {
+    // SIEMPRE mostrar 2 decimales para ambas monedas (COP y USD)
     return new Intl.NumberFormat('es-CO', {
       style: 'currency',
-      currency: 'COP',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
+      currency: currency === 'USD' ? 'USD' : 'COP',
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
     }).format(amount);
   } catch (error) {
     console.error('Error formateando moneda:', error, 'valor:', amount);

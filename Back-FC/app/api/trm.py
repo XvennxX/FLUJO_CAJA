@@ -8,6 +8,7 @@ from decimal import Decimal
 from app.core.database import get_db
 from app.models.trm import TRM
 from pydantic import BaseModel
+from app.services.trm_service import trm_service
 
 router = APIRouter()
 
@@ -40,6 +41,27 @@ def get_trm_by_date(fecha: date, db: Session = Depends(get_db)):
     if not trm:
         raise HTTPException(status_code=404, detail=f"No se encontró TRM para la fecha {fecha}")
     return trm
+
+@router.post("/verificar-faltantes")
+def verificar_trms_faltantes(days_back: int = 7):
+    """Verificar y actualizar TRMs faltantes usando el servicio interno"""
+    try:
+        resultado = trm_service.verificar_trms_faltantes(days_back=days_back)
+        return resultado
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error verificando TRMs: {str(e)}")
+
+@router.post("/obtener-fecha/{fecha}")
+def obtener_trm_fecha(fecha: date):
+    """Obtener TRM para una fecha específica usando el servicio interno"""
+    try:
+        exito = trm_service.obtener_trm_fecha(fecha)
+        return {
+            "success": exito,
+            "fecha": fecha.isoformat()
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error obteniendo TRM: {str(e)}")
 
 @router.get("/range", response_model=List[TRMResponse])
 def get_trm_range(

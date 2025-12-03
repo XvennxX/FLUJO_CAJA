@@ -87,15 +87,6 @@ const DatePicker: React.FC<DatePickerProps> = ({
       const today = new Date();
       const isBusinessDay = onlyBusinessDays ? esFechaHabilitada(currentDate) : true;
       
-      // Debug log para fechas específicas
-      if (onlyBusinessDays && day <= 5) {
-        console.log(`Debug day ${day}:`, {
-          date: dateString,
-          isBusinessDay,
-          currentDate: currentDate.toDateString()
-        });
-      }
-      
       days.push({
         date: currentDate,
         isCurrentMonth: true,

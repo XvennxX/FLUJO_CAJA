@@ -89,6 +89,32 @@ async def read_users_me(current_user: Usuario = Depends(get_current_user)):
     """Obtener información del usuario actual"""
     return UserResponse.model_validate(current_user)
 
+@router.post("/refresh", response_model=Token)
+async def refresh_access_token(
+    current_user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Renovar token de acceso usando el token actual"""
+    # Verificar que el usuario siga activo
+    if not current_user.estado:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Su cuenta ha sido desactivada. Contacte al administrador.",
+        )
+    
+    # Crear nuevo token con mismo tiempo de expiración
+    access_token_expires = timedelta(minutes=settings.access_token_expire_minutes)
+    access_token = create_access_token(
+        data={"sub": current_user.email}, expires_delta=access_token_expires
+    )
+    
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "expires_in": settings.access_token_expire_minutes * 60,
+        "user": UserResponse.model_validate(current_user)
+    }
+
 @router.post("/logout")
 async def logout():
     """Cerrar sesión (en el cliente se debe eliminar el token)"""

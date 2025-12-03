@@ -5,12 +5,14 @@ import { formatCurrency } from '../../utils/formatters';
 import { formatDateString } from '../../utils/dateUtils';
 import { isConceptoAutoCalculado } from '../../utils/conceptos';
 import { useTRM } from '../../hooks/useTRM';
+import { useTRMByDate } from '../../hooks/useTRMByDate';
 import { useConceptosFlujoCaja, ConceptoFlujoCaja } from '../../hooks/useConceptosFlujoCaja';
 import { useTransaccionesFlujoCaja } from '../../hooks/useTransaccionesFlujoCaja';
 import { useDiferenciaSaldos } from '../../hooks/useDiferenciaSaldos';
 import DatePicker from '../Calendar/DatePicker';
 import { useDashboardWebSocket } from '../../hooks/useWebSocket';
 import { CeldaEditable } from '../UI/CeldaEditable';
+import { FiltrosDashboard } from '../Dashboard/FiltrosDashboard';
 
 interface Concepto {
   codigo: string;
@@ -46,8 +48,15 @@ const DashboardPagaduria: React.FC = () => {
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [loading, setLoading] = useState(true);
   
-  // Hook para obtener TRM
-  const { trm, loading: trmLoading, error: trmError, refetch: refetchTRM } = useTRM();
+  // Estado para multi-moneda
+  const [usarMultiMoneda, setUsarMultiMoneda] = useState<boolean>(false);
+  
+  // Estados para filtros
+  const [companiasFiltradas, setCompaniasFiltradas] = useState<number[]>([]);
+  const [bancosFiltrados, setBancosFiltrados] = useState<number[]>([]);
+  
+  // Hook para obtener TRM de la fecha seleccionada
+  const { trm, loading: trmLoading, error: trmError, refetch: refetchTRM } = useTRMByDate(selectedDate);
   
   // Hook para obtener conceptos desde el backend
   const { conceptosPagaduria, loading: conceptosLoading, error: conceptosError } = useConceptosFlujoCaja();
@@ -73,6 +82,202 @@ const DashboardPagaduria: React.FC = () => {
   // Hook para WebSocket - actualizaciones en tiempo real
   useDashboardWebSocket('pagaduria', cargarTransacciones);
 
+  // Función para conversión de moneda
+  const convertirMoneda = (monto: number, tipoMonedaCuenta: string): number => {
+    console.log(`🔄 convertirMoneda called:`, { monto, tipoMonedaCuenta, usarMultiMoneda, trmValue: trm?.valor });
+    
+    if (!usarMultiMoneda || !trm) {
+      console.log(`❌ No conversion: usarMultiMoneda=${usarMultiMoneda}, trm=${!!trm}`);
+      return monto;
+    }
+    
+    // Si la cuenta es USD, convertir de COP a USD
+    if (tipoMonedaCuenta === 'USD') {
+      const convertido = Math.floor((monto / trm.valor) * 100) / 100; // Truncar a 2 decimales (no redondear)
+      console.log(`💱 Converting ${monto} COP to ${convertido} USD (TRM: ${trm.valor})`);
+      return convertido;
+    }
+    
+    // Si la cuenta es COP, mantener el monto original
+    console.log(`✅ Keeping COP value: ${monto}`);
+    return monto;
+  };
+
+  // Función para obtener monto con conversión de moneda
+  const obtenerMontoConConversion = (conceptoId: number, cuentaId: number, tipoMonedaCuenta?: string): number => {
+    const montoOriginal = obtenerMonto(conceptoId, cuentaId);
+    
+    if (!usarMultiMoneda || !tipoMonedaCuenta) {
+      return montoOriginal;
+    }
+    
+    return convertirMoneda(montoOriginal, tipoMonedaCuenta);
+  };
+
+  // Función para filtrar cuentas bancarias
+  const obtenerCuentasFiltradas = (): BankAccount[] => {
+    if (companiasFiltradas.length === 0 && bancosFiltrados.length === 0) {
+      // Si no hay filtros, mostrar todas las cuentas
+      return bankAccounts;
+    }
+    
+    return bankAccounts.filter(account => {
+      const cumpleCompania = companiasFiltradas.length === 0 || companiasFiltradas.includes(account.compania.id);
+      const cumpleBanco = bancosFiltrados.length === 0 || bancosFiltrados.includes(account.banco.id);
+      
+      return cumpleCompania && cumpleBanco;
+    });
+  };
+
+  // Funciones para manejar los filtros
+  const handleCompaniasChange = (nuevasCompanias: number[]) => {
+    setCompaniasFiltradas(nuevasCompanias);
+  };
+
+  const handleBancosChange = (nuevosBancos: number[]) => {
+    setBancosFiltrados(nuevosBancos);
+  };
+
+  const handleLimpiarFiltros = () => {
+    setCompaniasFiltradas([]);
+    setBancosFiltrados([]);
+  };
+
+  // Función helper para validar y limpiar valores numéricos
+  const safeNumericValue = (value: any): number => {
+    if (typeof value === 'number' && isFinite(value) && !isNaN(value)) {
+      return value;
+    }
+    console.warn('Valor no válido detectado:', value, 'tipo:', typeof value);
+    return 0;
+  };
+
+  // Función para aplicar signo correcto basado en el código del concepto
+  const aplicarSignoSegunCodigo = (valor: number, codigo: string): number => {
+    try {
+      // Validar que el valor sea un número válido
+      if (!isFinite(valor) || isNaN(valor)) {
+        console.warn('Valor no válido en aplicarSignoSegunCodigo:', valor);
+        return 0;
+      }
+      
+      // Si no hay código definido (null, undefined, o string vacío), devolver el valor original
+      // Esto es importante para conceptos calculados que ya tienen el signo correcto en BD
+      if (!codigo || codigo.trim() === '') {
+        return valor; // Retornar valor original con su signo tal como está en BD
+      }
+      
+      // Convertir a número absoluto primero para evitar doble negativos
+      const valorAbsoluto = Math.abs(valor);
+      
+      switch (codigo?.toUpperCase()) {
+        case 'E': // Egresos - siempre negativos
+          return -valorAbsoluto;
+        case 'I': // Ingresos - siempre positivos
+          return valorAbsoluto;
+        case 'N': // Neutro - siempre positivos
+          return valorAbsoluto;
+        default: // Para cualquier otro código no reconocido, devolver valor original
+          return valor;
+      }
+    } catch (error) {
+      console.error('Error en aplicarSignoSegunCodigo:', error);
+      return 0;
+    }
+  };
+
+  // Función wrapper para guardar transacciones aplicando la lógica de signos automáticos
+  const guardarTransaccionConSignos = async (
+    conceptoId: number, 
+    cuentaId: number | null, 
+    monto: number, 
+    companiaId?: number
+  ): Promise<boolean> => {
+    try {
+      // Buscar el concepto para obtener su código
+      const concepto = conceptos.find(c => c.id === conceptoId);
+      
+      if (!concepto) {
+        console.error('❌ No se encontró el concepto con ID:', conceptoId);
+        return false;
+      }
+      
+      console.log('💰 [PAGADURÍA] Guardando transacción:', {
+        concepto: concepto.nombre,
+        codigo: concepto.codigo,
+        montoIngresado: monto,
+        conceptoId,
+        cuentaId,
+        companiaId
+      });
+      
+      // 🔧 CORRECCIÓN: Aplicar lógica de signos según el código del concepto
+      // E (Egreso) → Siempre negativo
+      // I (Ingreso) → Siempre positivo  
+      // N (Neutro) o sin código → Respetar el signo ingresado por el usuario
+      let montoFinal = monto;
+      
+      if (concepto.codigo && concepto.codigo.trim() !== '' && concepto.codigo.trim().toUpperCase() !== 'N') {
+        // Aplicar lógica de signos automática SOLO para E (Egreso) e I (Ingreso)
+        montoFinal = aplicarSignoSegunCodigo(Math.abs(monto), concepto.codigo);
+        console.log('🔧 [PAGADURÍA] Signo aplicado automáticamente:', {
+          concepto: concepto.nombre,
+          montoOriginal: monto,
+          montoAbsoluto: Math.abs(monto),
+          codigo: concepto.codigo,
+          montoFinal: montoFinal,
+          razon: 'Concepto tipo E o I con código definido',
+          logicaAplicada: concepto.codigo.toUpperCase() === 'E' ? 'Egreso → Negativo' : 
+                         concepto.codigo.toUpperCase() === 'I' ? 'Ingreso → Positivo' : 'Código desconocido'
+        });
+      } else {
+        // Para conceptos NEUTROS (N) o sin código, respetar el valor ingresado por el usuario
+        montoFinal = monto;
+        console.log('✋ [PAGADURÍA] Valor respetado tal como ingresó el usuario:', {
+          concepto: concepto.nombre,
+          codigo: concepto.codigo || 'sin código',
+          montoIngresadoPorUsuario: monto,
+          montoFinal: montoFinal,
+          esNegativo: monto < 0,
+          razon: concepto.codigo?.toUpperCase() === 'N' ? 'Concepto Neutro - el usuario define el signo' : 'Concepto sin código definido'
+        });
+      }
+      
+      console.log('📤 [PAGADURÍA] Enviando al backend:', {
+        montoFinal,
+        aplicacionSignos: concepto.codigo ? 'automática' : 'manual'
+      });
+      
+      // Llamar a la función original con el monto final
+      const resultado = await guardarTransaccion(conceptoId, cuentaId, montoFinal, companiaId);
+      
+      console.log('📋 [PAGADURÍA] Resultado del backend:', {
+        success: resultado,
+        concepto: concepto.nombre,
+        monto: montoFinal
+      });
+      
+      if (!resultado) {
+        console.error('❌ [PAGADURÍA] El backend retornó false para:', {
+          concepto: concepto.nombre,
+          monto: montoFinal,
+          errorContext: 'Operación de guardado falló'
+        });
+      } else {
+        console.log('✅ [PAGADURÍA] Guardado exitoso en backend para:', {
+          concepto: concepto.nombre,
+          monto: montoFinal
+        });
+      }
+      
+      return resultado;
+      
+    } catch (error) {
+      console.error('❌ [PAGADURÍA] Error aplicando signos a transacción:', error);
+      return false;
+    }
+  };
+
   // Función para convertir conceptos del backend al formato del frontend
   const convertirConceptosParaTabla = (conceptosBackend: ConceptoFlujoCaja[]): Concepto[] => {
     return conceptosBackend.map(concepto => ({
@@ -88,8 +293,14 @@ const DashboardPagaduria: React.FC = () => {
     let total = 0;
     
     if (concepto.id) {
-      // Sumar todas las transacciones de este concepto
-      const transaccionesConcepto = transacciones.filter(t => t.concepto_id === concepto.id);
+      // Obtener IDs de cuentas filtradas para calcular solo sus totales
+      const cuentasFiltradas = obtenerCuentasFiltradas();
+      const idsConCuentasFiltradas = cuentasFiltradas.map(c => c.id);
+      
+      // Sumar solo las transacciones de este concepto que pertenezcan a cuentas filtradas
+      const transaccionesConcepto = transacciones.filter(t => 
+        t.concepto_id === concepto.id && t.cuenta_id !== null && idsConCuentasFiltradas.includes(t.cuenta_id)
+      );
       total = transaccionesConcepto.reduce((sum, t) => sum + t.monto, 0);
     }
     
@@ -114,6 +325,41 @@ const DashboardPagaduria: React.FC = () => {
     } catch (error) {
       console.error('❌ Error procesando diferencias saldos:', error);
     }
+  };
+
+  // Función para expandir cuentas por moneda manteniendo el orden
+  const expandirCuentasPorMoneda = (cuentas: BankAccount[]) => {
+    if (!usarMultiMoneda) {
+      return cuentas.map(cuenta => ({
+        ...cuenta,
+        cuenta_moneda_id: `${cuenta.id}_${cuenta.monedas[0] || 'COP'}`,
+        moneda_display: cuenta.monedas[0] || 'COP',
+        tipo_moneda: cuenta.monedas[0] || 'COP', // Agregar tipo_moneda para compatibilidad
+        nombre_con_moneda: `${cuenta.banco.nombre} ${cuenta.numero_cuenta.slice(-4)}`,
+        es_expansion: false
+      }));
+    }
+
+    const cuentasExpandidas: any[] = [];
+    
+    cuentas.forEach(cuenta => {
+      const monedas = cuenta.monedas && cuenta.monedas.length > 0 ? cuenta.monedas : ['COP'];
+      
+      monedas.forEach((moneda, index) => {
+        const cuentaExpandida = {
+          ...cuenta,
+          cuenta_moneda_id: `${cuenta.id}_${moneda}`,
+          moneda_display: moneda,
+          tipo_moneda: moneda, // Agregar tipo_moneda para compatibilidad
+          nombre_con_moneda: `${cuenta.banco.nombre} ${cuenta.numero_cuenta.slice(-4)} (${moneda})`,
+          es_expansion: index > 0 // Marcar si es una expansión de moneda adicional
+        };
+        console.log(`📊 Cuenta expandida:`, cuentaExpandida);
+        cuentasExpandidas.push(cuentaExpandida);
+      });
+    });
+
+    return cuentasExpandidas;
   };
 
 
@@ -356,6 +602,25 @@ const DashboardPagaduria: React.FC = () => {
             )}
           </div>
           
+          {/* Toggle Multi-Moneda */}
+          <div className="flex items-center space-x-2">
+            <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              Multi-Moneda
+            </label>
+            <button
+              onClick={() => setUsarMultiMoneda(!usarMultiMoneda)}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                usarMultiMoneda ? 'bg-green-600' : 'bg-gray-200 dark:bg-gray-700'
+              }`}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  usarMultiMoneda ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
+            </button>
+          </div>
+          
           <button className="flex items-center space-x-2 px-3 py-2 bg-bolivar-600 text-white rounded-lg hover:bg-bolivar-700 transition-colors text-sm">
             <RefreshCw className="h-4 w-4" />
             <span>Actualizar</span>
@@ -367,9 +632,25 @@ const DashboardPagaduria: React.FC = () => {
         </div>
       </div>
 
+      {/* Filtros */}
+      <FiltrosDashboard
+        bankAccounts={bankAccounts}
+        companiasFiltradas={companiasFiltradas}
+        bancosFiltrados={bancosFiltrados}
+        onCompaniasChange={handleCompaniasChange}
+        onBancosChange={handleBancosChange}
+        onLimpiarFiltros={handleLimpiarFiltros}
+      />
+
       {/* Tabla estilo Excel - SIN fechas, solo compañías y cuentas */}
       <div className="bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg overflow-hidden shadow-lg">
         <div className="overflow-x-auto">
+          {(() => {
+            // Obtener cuentas filtradas y expandir por moneda si está activado el modo multi-moneda
+            const cuentasFiltradas = obtenerCuentasFiltradas();
+            const cuentasExpandidas = expandirCuentasPorMoneda(cuentasFiltradas);
+            
+            return (
           <table className="w-full border-collapse text-xs">
             <thead>
               {/* FILA 1 - SOLO COMPAÑÍAS */}
@@ -377,8 +658,8 @@ const DashboardPagaduria: React.FC = () => {
                 <th className="bg-white dark:bg-gray-800 border border-gray-400 dark:border-gray-500 sticky left-0 z-20 min-w-[60px]"></th>
                 <th className="bg-white dark:bg-gray-800 border border-gray-400 dark:border-gray-500 sticky left-[60px] z-20 min-w-[200px]"></th>
                 {/* Compañías reales desde la base de datos - empiezan desde la tercera columna */}
-                {bankAccounts.map((account) => (
-                  <th key={`company-${account.id}`} className="bg-blue-200 dark:bg-blue-800 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-900 dark:text-white font-bold text-center min-w-[120px]">
+                {cuentasExpandidas.map((account) => (
+                  <th key={`company-${account.cuenta_moneda_id}`} className="bg-blue-200 dark:bg-blue-800 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-900 dark:text-white font-bold text-center min-w-[120px]">
                     {account.compania?.nombre || 'COMPAÑÍA DESCONOCIDA'}
                   </th>
                 ))}
@@ -393,9 +674,9 @@ const DashboardPagaduria: React.FC = () => {
                 <th className="bg-white dark:bg-gray-800 border border-gray-400 dark:border-gray-500 sticky left-0 z-20 min-w-[60px]"></th>
                 <th className="bg-white dark:bg-gray-800 border border-gray-400 dark:border-gray-500 sticky left-[60px] z-20 min-w-[200px]"></th>
                 {/* Bancos reales desde la base de datos - empiezan desde la tercera columna */}
-                {bankAccounts.map((account) => (
-                  <th key={`bank-${account.id}`} className="bg-blue-100 dark:bg-blue-900/50 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-800 dark:text-gray-200 font-semibold text-center text-xs">
-                    {account.banco?.nombre || 'BANCO DESCONOCIDO'}
+                {cuentasExpandidas.map((account) => (
+                  <th key={`bank-${account.cuenta_moneda_id}`} className="bg-blue-100 dark:bg-blue-900/50 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-800 dark:text-gray-200 font-semibold text-center text-xs">
+                    {account.nombre_con_moneda || 'BANCO DESCONOCIDO'}
                   </th>
                 ))}
                 {/* Columna TOTALES */}
@@ -413,9 +694,18 @@ const DashboardPagaduria: React.FC = () => {
                   CUENTA
                 </th>
                 {/* Cuentas bancarias reales desde la base de datos - empiezan desde la tercera columna */}
-                {bankAccounts.map((account) => (
-                  <th key={account.id} className="bg-gray-100 dark:bg-gray-700 border border-gray-400 dark:border-gray-500 px-1 py-1 text-gray-700 dark:text-gray-300 font-medium text-center text-xs">
-                    {account.numero_cuenta}
+                {cuentasExpandidas.map((account) => (
+                  <th key={account.cuenta_moneda_id} className="bg-gray-100 dark:bg-gray-700 border border-gray-400 dark:border-gray-500 px-1 py-1 text-gray-700 dark:text-gray-300 font-medium text-center text-xs">
+                    <div className="flex flex-col">
+                      <span>{account.numero_cuenta}</span>
+                      {usarMultiMoneda && (
+                        <span className={`px-1 py-0.5 rounded text-xs font-bold ${
+                          account.moneda_display === 'USD' ? 'bg-green-200 text-green-800' : 'bg-yellow-200 text-yellow-800'
+                        }`}>
+                          {account.moneda_display}
+                        </span>
+                      )}
+                    </div>
                   </th>
                 ))}
                 {/* Columna TOTALES */}
@@ -433,8 +723,8 @@ const DashboardPagaduria: React.FC = () => {
                   TRM
                 </th>
                 {/* Celdas TRM para cuentas bancarias reales - empiezan desde la tercera columna */}
-                {bankAccounts.map((account) => (
-                  <th key={`trm-${account.id}`} className="bg-gray-50 dark:bg-gray-600 border border-gray-400 dark:border-gray-500 px-1 py-1 text-gray-700 dark:text-gray-300 font-medium text-center text-xs">
+                {cuentasExpandidas.map((account) => (
+                  <th key={`trm-${account.cuenta_moneda_id}`} className="bg-gray-50 dark:bg-gray-600 border border-gray-400 dark:border-gray-500 px-1 py-1 text-gray-700 dark:text-gray-300 font-medium text-center text-xs">
                     {trmLoading ? (
                       <span className="text-gray-400">Cargando...</span>
                     ) : trmError ? (
@@ -496,26 +786,27 @@ const DashboardPagaduria: React.FC = () => {
 
                   {/* CELDAS DE DATOS - Solo cuentas bancarias reales desde la tercera columna */}
                   {/* Columnas de cuentas bancarias reales */}
-                  {bankAccounts.map((account) => (
+                  {cuentasExpandidas.map((account) => (
                     <td
-                      key={`data-${account.id}`}
+                      key={`data-${account.cuenta_moneda_id}`}
                       className="border border-gray-400 dark:border-gray-500 px-1 py-1 text-center text-xs h-8 min-h-[32px]"
                     >
                       {/* Si es DIFERENCIA SALDOS, mostrar valor desde base de datos */}
                       {concepto.nombre === 'DIFERENCIA SALDOS' ? (
                         <div className="h-full flex items-center justify-center">
                           {(() => {
-                            console.log(`🔍 Mostrando DIFERENCIA SALDOS para cuenta ${account.id} (${account.numero_cuenta})`);
+                            console.log(`🔍 Mostrando DIFERENCIA SALDOS para cuenta ${account.cuenta_moneda_id} (${account.numero_cuenta})`);
                             const transaccion = transacciones.find(t => 
                               t.cuenta_id === account.id && 
                               t.concepto_id === 52
                             );
-                            const diferencia = transaccion ? parseFloat(String(transaccion.monto)) || 0 : 0;
-                            console.log(`✅ Valor DIFERENCIA SALDOS cuenta ${account.id}: ${diferencia}`);
+                            const diferenciaOriginal = transaccion ? parseFloat(String(transaccion.monto)) || 0 : 0;
+                            const diferencia = convertirMoneda(diferenciaOriginal, account.tipo_moneda);
+                            console.log(`✅ Valor DIFERENCIA SALDOS cuenta ${account.cuenta_moneda_id}: ${diferenciaOriginal} -> ${diferencia} (${account.tipo_moneda})`);
                             
                             return diferencia !== 0 ? (
                               <span className={`font-medium ${diferencia < 0 ? 'text-red-700 dark:text-red-400' : 'text-green-700 dark:text-green-400'}`}>
-                                {diferencia < 0 ? `(${formatCurrency(Math.abs(diferencia))})` : formatCurrency(diferencia)}
+                                {diferencia < 0 ? `(${formatCurrency(Math.abs(diferencia), account.tipo_moneda)})` : formatCurrency(diferencia, account.tipo_moneda)}
                               </span>
                             ) : (
                               <span className="text-gray-400 dark:text-gray-500">—</span>
@@ -526,8 +817,9 @@ const DashboardPagaduria: React.FC = () => {
                         <CeldaEditable
                           conceptoId={concepto.id || 0}
                           cuentaId={account.id}
-                          valor={obtenerMonto(concepto.id || 0, account.id)}
-                          onGuardar={guardarTransaccion}
+                          valor={obtenerMontoConConversion(concepto.id || 0, account.id, account.tipo_moneda)}
+                          currency={account.tipo_moneda}
+                          onGuardar={guardarTransaccionConSignos} // 🔧 Usar función con lógica de signos
                           companiaId={account.compania?.id}
                           disabled={isConceptoAutoCalculado(concepto.id)} // 🚫 Deshabilitar conceptos auto-calculados
                         />
@@ -569,11 +861,13 @@ const DashboardPagaduria: React.FC = () => {
 
               {/* SEPARADOR */}
               <tr>
-                <td colSpan={3 + bankAccounts.length} 
+                <td colSpan={3 + cuentasExpandidas.length} 
                     className="bg-gray-300 dark:bg-gray-600 h-2 border border-gray-400 dark:border-gray-500"></td>
               </tr>
             </tbody>
           </table>
+            );
+          })()}
         </div>
       </div>
 

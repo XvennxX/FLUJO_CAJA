@@ -15,6 +15,7 @@ from ..models import (
     ConceptoFlujoCaja, TransaccionFlujoCaja, CuentaBancaria, Usuario,
     AreaConcepto, AreaTransaccion, TipoMovimiento, TipoDependencia
 )
+from ..models.gmf_config import GMFConfig
 from ..schemas.flujo_caja import (
     TransaccionFlujoCajaCreate, 
     TransaccionFlujoCajaUpdate, 
@@ -42,6 +43,8 @@ class TransaccionFlujoCajaService:
         - N (NEUTRAL): Mantiene el signo que ingrese el usuario
         """
         try:
+            logger.info(f"🔍 _aplicar_signo_por_tipo_concepto ENTRADA: monto={monto}, concepto_id={concepto_id}, tipo_monto={type(monto)}")
+            
             # Obtener el concepto y su código
             concepto = self.db.query(ConceptoFlujoCaja).filter(
                 ConceptoFlujoCaja.id == concepto_id
@@ -54,23 +57,24 @@ class TransaccionFlujoCajaService:
             codigo = concepto.codigo or ""
             monto_absoluto = abs(monto)
             
+            logger.info(f"🔍 Concepto encontrado: nombre={concepto.nombre}, codigo='{codigo}'")
+            
             if codigo == "I":
                 # INGRESO: Siempre positivo
                 resultado = monto_absoluto
-                if monto < 0:
-                    logger.info(f"💰 INGRESO: Convertido de {monto} a {resultado} (concepto: {concepto.nombre})")
+                logger.info(f"💰 INGRESO: monto_original={monto} → resultado={resultado} (concepto: {concepto.nombre})")
                 return resultado
                 
             elif codigo == "E":
                 # EGRESO: Siempre negativo  
                 resultado = -monto_absoluto
-                if monto > 0:
-                    logger.info(f"💸 EGRESO: Convertido de {monto} a {resultado} (concepto: {concepto.nombre})")
+                logger.info(f"💸 EGRESO: monto_original={monto} → resultado={resultado} (concepto: {concepto.nombre})")
                 return resultado
                 
             else:  # codigo == "N" o cualquier otro
                 # NEUTRAL: Mantiene el signo del usuario
-                logger.info(f"⚖️ NEUTRAL: Mantenido {monto} (concepto: {concepto.nombre}, código: {codigo})")
+                logger.info(f"⚖️ NEUTRAL: monto_original={monto} → resultado={monto} (concepto: {concepto.nombre}, código: '{codigo}')")
+                logger.info(f"🔍 NEUTRAL DETALLE: monto < 0 = {monto < 0}, monto > 0 = {monto > 0}, monto == 0 = {monto == 0}")
                 return monto
                 
         except Exception as e:
@@ -80,10 +84,13 @@ class TransaccionFlujoCajaService:
     def crear_transaccion(self, transaccion_data: TransaccionFlujoCajaCreate, usuario_id: int) -> TransaccionFlujoCaja:
         """Crear una nueva transacción de flujo de caja"""
         
+        # 🔍 DEBUG: Log del monto recibido ANTES de cualquier procesamiento
+        logger.info(f"🔍 DEBUG crear_transaccion: monto ORIGINAL recibido = {transaccion_data.monto}, concepto_id = {transaccion_data.concepto_id}")
+        
         # Validar que el concepto existe y está activo
         concepto = self.db.query(ConceptoFlujoCaja).filter(
             ConceptoFlujoCaja.id == transaccion_data.concepto_id,
-            ConceptoFlujoCaja.activo == True
+            ConceptoFlujoCaja.activo == 1
         ).first()
         
         if not concepto:
@@ -137,6 +144,30 @@ class TransaccionFlujoCajaService:
             compania_id=transaccion_data.compania_id,
             usuario_id=usuario_id
         )
+
+        # 🔁 RECÁLCULOS DIRECTOS CLAVE
+        try:
+            # Si se crea uno de los componentes base (1,2,3), recalcular SALDO NETO INICIAL PAGADURÍA (ID 4)
+            if transaccion_data.concepto_id in (1, 2, 3) and transaccion_data.cuenta_id:
+                self.dependencias_service.recalcular_saldo_neto_inicial_pagaduria(
+                    fecha=transaccion_data.fecha,
+                    cuenta_id=transaccion_data.cuenta_id,
+                    usuario_id=usuario_id,
+                    compania_id=transaccion_data.compania_id
+                )
+
+            # Recalcular GMF para la cuenta/fecha según configuración vigente
+            if transaccion_data.cuenta_id:
+                self.dependencias_service.recalcular_gmf(
+                    fecha=transaccion_data.fecha,
+                    cuenta_id=transaccion_data.cuenta_id,
+                    usuario_id=usuario_id,
+                    compania_id=transaccion_data.compania_id
+                )
+            # Asegurar escritura
+            self.db.commit()
+        except Exception as e:
+            logger.warning(f"⚠️ Error en recálculos directos post-creación: {e}")
         
         return db_transaccion
     
@@ -162,6 +193,13 @@ class TransaccionFlujoCajaService:
         if not db_transaccion:
             return None
         
+        # Actualizar campos
+        update_data = transaccion_data.model_dump(exclude_unset=True)
+        
+        # 🔍 DEBUG: Log del monto recibido ANTES de cualquier procesamiento
+        if 'monto' in update_data:
+            logger.info(f"🔍 DEBUG actualizar_transaccion: monto ORIGINAL recibido = {update_data['monto']}, concepto_id = {db_transaccion.concepto_id}")
+        
         # Guardar valores originales para auditoría
         valores_originales = {
             "fecha": db_transaccion.fecha,
@@ -170,9 +208,6 @@ class TransaccionFlujoCajaService:
             "monto": str(db_transaccion.monto),
             "descripcion": db_transaccion.descripcion
         }
-        
-        # Actualizar campos
-        update_data = transaccion_data.model_dump(exclude_unset=True)
         
         # 🔥 APLICAR SIGNO CORRECTO si se está actualizando el monto
         if 'monto' in update_data:
@@ -208,15 +243,12 @@ class TransaccionFlujoCajaService:
         if 'fecha' in update_data or 'area' in update_data or 'monto' in update_data:
             logger.info(f"🎯 DEBUG: CONDICIÓN CUMPLIDA - Ejecutando auto-cálculo...")
             fecha_procesar = update_data.get('fecha', db_transaccion.fecha)
-            
-            # IMPORTANTE: Forzar flush para asegurar que los cambios sean visibles
-            # antes de ejecutar el recálculo de dependencias
+
+            # Flush previo
             self.db.flush()
-            logger.info(f"🔄 DEBUG: flush() ejecutado")
-            
-            # Usar recálculo completo en lugar de dependencias básicas para asegurar
-            # que conceptos como SUBTOTAL TESORERÍA se actualicen correctamente
-            logger.info(f"🚀 DEBUG: Llamando procesar_dependencias_completas_ambos_dashboards...")
+            logger.info("🔄 DEBUG: flush() ejecutado antes del recálculo completo")
+
+            # Recalculo completo
             resultado_dependencias = self.dependencias_service.procesar_dependencias_completas_ambos_dashboards(
                 fecha=fecha_procesar,
                 concepto_modificado_id=db_transaccion.concepto_id,
@@ -224,7 +256,33 @@ class TransaccionFlujoCajaService:
                 compania_id=db_transaccion.compania_id,
                 usuario_id=usuario_id
             )
-            logger.info(f"✅ DEBUG: Auto-cálculo completado, resultado: {resultado_dependencias}")
+            logger.info(f"✅ DEBUG: Auto-cálculo completo ejecutado")
+
+            # Recalculo directo saldo neto inicial pagaduría si concepto base afectado
+            if db_transaccion.concepto_id in (1,2,3):
+                try:
+                    resultado_saldo_neto = self.dependencias_service.recalcular_saldo_neto_inicial_pagaduria(
+                        fecha=fecha_procesar,
+                        cuenta_id=db_transaccion.cuenta_id,
+                        usuario_id=usuario_id,
+                        compania_id=db_transaccion.compania_id
+                    )
+                    logger.info(f"🔁 DEBUG: Recalculo directo saldo neto inicial resultado: {resultado_saldo_neto}")
+                except Exception as e:
+                    logger.warning(f"⚠️ Error recálculo directo saldo neto inicial: {e}")
+
+            # Recalculo GMF para la cuenta con la configuración vigente a la fecha (si existe)
+            if db_transaccion.cuenta_id:
+                try:
+                    resultado_gmf = self.dependencias_service.recalcular_gmf(
+                        fecha=fecha_procesar,
+                        cuenta_id=db_transaccion.cuenta_id,
+                        usuario_id=usuario_id,
+                        compania_id=db_transaccion.compania_id
+                    )
+                    logger.info(f"🔁 DEBUG: Recalculo GMF directo resultado: {resultado_gmf}")
+                except Exception as e:
+                    logger.warning(f"⚠️ Error recálculo GMF directo: {e}")
         else:
             logger.info(f"❌ DEBUG: CONDICIÓN NO CUMPLIDA - Auto-cálculo NO ejecutado")
         
@@ -257,7 +315,7 @@ class TransaccionFlujoCajaService:
         
         # Obtener conceptos del área ordenados
         conceptos_query = self.db.query(ConceptoFlujoCaja).filter(
-            ConceptoFlujoCaja.activo == True
+            ConceptoFlujoCaja.activo == 1
         )
         
         if area != AreaConceptoSchema.ambas:
@@ -359,7 +417,7 @@ class TransaccionFlujoCajaService:
         
         conceptos_dependientes = self.db.query(ConceptoFlujoCaja).filter(
             ConceptoFlujoCaja.depende_de_concepto_id.isnot(None),
-            ConceptoFlujoCaja.activo == True,
+            ConceptoFlujoCaja.activo == 1,
             or_(ConceptoFlujoCaja.area == area_concepto, ConceptoFlujoCaja.area == AreaConcepto.ambas)
         ).all()
         
@@ -471,6 +529,76 @@ class TransaccionFlujoCajaService:
         
         self.db.commit()
         self.db.refresh(transaccion)
+        
+        return transaccion
+    
+    def actualizar_transaccion_simple(
+        self, 
+        transaccion_id: int, 
+        transaccion_data: TransaccionFlujoCajaUpdate, 
+        usuario_id: int
+    ) -> TransaccionFlujoCaja:
+        """🚀 OPTIMIZADO: Actualiza transacción SIN procesar dependencias inmediatamente"""
+        
+        # Buscar la transacción
+        transaccion = self.db.query(TransaccionFlujoCaja).filter(
+            TransaccionFlujoCaja.id == transaccion_id
+        ).first()
+        
+        if not transaccion:
+            raise ValueError("Transacción no encontrada")
+        
+        # Guardar valores anteriores para auditoría
+        valores_anteriores = {
+            "monto": float(transaccion.monto),
+            "descripcion": transaccion.descripcion,
+        }
+        
+        # Actualizar campos con lógica de signos
+        update_data = transaccion_data.dict(exclude_unset=True)
+        
+        # 🔍 DEBUG: Log del monto recibido ANTES de cualquier procesamiento
+        if 'monto' in update_data:
+            logger.info(f"🔍 DEBUG actualizar_transaccion_simple: monto ORIGINAL recibido = {update_data['monto']}, concepto_id = {transaccion.concepto_id}")
+        
+        # 🔥 APLICAR SIGNO CORRECTO si se está actualizando el monto
+        if 'monto' in update_data:
+            monto_original = update_data['monto']
+            monto_corregido = self._aplicar_signo_por_tipo_concepto(monto_original, transaccion.concepto_id)
+            update_data['monto'] = monto_corregido
+            logger.info(f"🔍 DEBUG actualizar_transaccion_simple: monto CORREGIDO = {monto_corregido}")
+        
+        for field, value in update_data.items():
+            setattr(transaccion, field, value)
+        
+        # Auditoría mínima
+        auditoria_actual = transaccion.auditoria or {}
+        auditoria_actual.update({
+            "accion": "actualizacion_rapida",
+            "usuario_id": usuario_id,
+            "timestamp": datetime.now().isoformat(),
+            "valores_anteriores": valores_anteriores,
+            "nota": "Actualización optimizada - dependencias en proceso"
+        })
+        transaccion.auditoria = auditoria_actual
+        
+        # Commit inmediato
+        self.db.commit()
+        self.db.refresh(transaccion)
+        
+        # 🔄 RECÁLCULO GMF: Si se actualizó el monto y hay cuenta asociada, recalcular GMF
+        if 'monto' in update_data and transaccion.cuenta_id:
+            try:
+                logger.info(f"🔁 Recalculando GMF después de actualización simple para cuenta {transaccion.cuenta_id}")
+                self.dependencias_service.recalcular_gmf(
+                    fecha=transaccion.fecha,
+                    cuenta_id=transaccion.cuenta_id,
+                    usuario_id=usuario_id,
+                    compania_id=transaccion.compania_id
+                )
+                self.db.commit()
+            except Exception as e:
+                logger.warning(f"⚠️ Error recalculando GMF en actualización simple: {e}")
         
         return transaccion
     

@@ -216,6 +216,31 @@ reports/*.csv
 uploads/
 media/user_uploads/
 
+# Archivos Excel de cargue (excepto plantillas)
+Excel/*.xlsx
+Excel/*.xls
+!Excel/PLANTILLA*.xlsx
+!Excel/TEMPLATE*.xlsx
+
+# Archivos de debug en raíz
+**/debug*.html
+**/debug*.js
+**/debug*.py
+
+# Scripts de verificación en raíz de Back-FC (deben estar en tools/)
+Back-FC/check_*.py
+Back-FC/debug_*.py
+Back-FC/limpiar_*.py
+Back-FC/test_*.py
+
+# Archivos de documentación en raíz de Back-FC (deben estar en docs/)
+Back-FC/*.md
+!Back-FC/README.md
+
+# Logs en raíz (deben estar en logs/)
+Back-FC/*.log
+Front-FC/*.log
+
 # ========================================
 # HERRAMIENTAS DE DESARROLLO
 # ========================================

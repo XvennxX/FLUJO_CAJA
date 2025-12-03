@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Building2, Download, RefreshCw, AlertCircle } from 'lucide-react';
+import { Building2, Download, RefreshCw, AlertCircle, Settings, Check, X } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { formatCurrency } from '../../utils/formatters';
+import { useTRMByDate } from '../../hooks/useTRMByDate';
 import { useConceptosFlujoCaja, ConceptoFlujoCaja } from '../../hooks/useConceptosFlujoCaja';
 import { useTransaccionesFlujoCaja, TransaccionFlujoCaja } from '../../hooks/useTransaccionesFlujoCaja';
 import { useDashboardWebSocket } from '../../hooks/useWebSocket';
@@ -9,8 +10,8 @@ import { CeldaEditable } from '../UI/CeldaEditable';
 import { ErrorBoundary } from '../UI/ErrorBoundary';
 import { SaldoInicialService } from '../../services/saldoInicialService';
 import DatePicker from '../Calendar/DatePicker';
-import DiasHabilesTest from '../DiasHabilesTest';
 import { isConceptoAutoCalculado } from '../../utils/conceptos';
+import { FiltrosDashboard } from '../Dashboard/FiltrosDashboard';
 
 interface Concepto {
   categoria: string;
@@ -33,6 +34,32 @@ interface BankAccount {
     id: number;
     nombre: string;
   };
+}
+
+interface GMFConfig {
+  cuenta_id: number;
+  conceptos_seleccionados: string[];
+}
+
+interface GMFModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  cuentaId: number;
+  conceptosActuales: number[];
+  onSave: (conceptos: number[]) => void;
+}
+
+interface GMFConfig {
+  cuenta_id: number;
+  conceptos_seleccionados: number[];
+}
+
+interface GMFModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  cuentaId: number;
+  conceptosActuales: number[];
+  onSave: (conceptos: number[]) => void;
 }
 
 const DashboardTesoreria: React.FC = () => {
@@ -59,8 +86,42 @@ const DashboardTesoreria: React.FC = () => {
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [loading, setLoading] = useState(true);
   
-  // Estado para forzar re-render cuando cambien las transacciones
-  const [forceUpdate, setForceUpdate] = useState(0);
+  // Estados para GMF
+  const [gmfConfig, setGmfConfig] = useState<Map<number, number[]>>(new Map());
+  const [gmfModalOpen, setGmfModalOpen] = useState(false);
+  const [currentGMFAccount, setCurrentGMFAccount] = useState<number | null>(null);
+  const [loadingGMFConfig, setLoadingGMFConfig] = useState(false);
+  // Lista fija de conceptos permitidos para GMF
+  const CONCEPTOS_GMF_PERMITIDOS: number[] = [
+    5,  // PAGOS INTERCOMPAÑÍAS
+    9,  // APERTURA ACTIVO FINANCIERO
+    12, // CANCELACIÓN KW
+    13, // PAGO INTERESES KW
+    29, // EGRESO DIVIDENDOS
+    34, // FORWARD (E)
+    35, // FORWARD (I)
+    43, // EMBARGOS
+    31, // SWAP
+    47, // COMISIONES
+    36, // COMPRA DIVISAS OTRAS ÁREAS
+    26, // COMPRA ACCIONES
+    22, // LLAMADO CAPITAL FCP
+    32, // OPCIONES (E)
+    33, // OPCIONES (I)
+    45, // OTROS
+    25, // TRASLADO ARL
+    46, // IMPUESTOS
+  ];
+  
+  // Estado para multi-moneda
+  const [usarMultiMoneda, setUsarMultiMoneda] = useState<boolean>(false);
+  
+  // Estados para filtros
+  const [companiasFiltradas, setCompaniasFiltradas] = useState<number[]>([]);
+  const [bancosFiltrados, setBancosFiltrados] = useState<number[]>([]);
+  
+  // Hook para obtener TRM de la fecha seleccionada
+  const { trm, loading: trmLoading, error: trmError } = useTRMByDate(selectedDate);
   
   // Hook para obtener conceptos desde el backend
   const { conceptosTesoreria, loading: conceptosLoading, error: conceptosError } = useConceptosFlujoCaja();
@@ -73,18 +134,221 @@ const DashboardTesoreria: React.FC = () => {
     guardarTransaccion,
     obtenerMonto,
     cargarTransacciones,
+    recargarTransaccionesCompleto, // Nueva función para recarga forzada
     setError: setTransaccionesError
   } = useTransaccionesFlujoCaja(selectedDate, 'tesoreria');
   
   // 🔄 WebSocket para actualizaciones en tiempo real
-  const { 
-    isConnected: wsConnected, 
-    updateCount, 
-    lastUpdateTime 
-  } = useDashboardWebSocket('tesoreria', () => {
+  useDashboardWebSocket('tesoreria', () => {
     console.log('🔄 [TESORERÍA] Recargando datos por WebSocket...');
-    cargarTransacciones();
+    recargarTransaccionesCompleto(); // Usar recarga forzada para WebSocket también
   });
+  
+  // Función para conversión de moneda
+  const convertirMoneda = (monto: number, tipoMonedaCuenta: string): number => {
+    console.log(`🔄 convertirMoneda called:`, { monto, tipoMonedaCuenta, usarMultiMoneda, trmValue: trm?.valor });
+    
+    if (!usarMultiMoneda || !trm) {
+      console.log(`❌ No conversion: usarMultiMoneda=${usarMultiMoneda}, trm=${!!trm}`);
+      return monto;
+    }
+    
+    // Si la cuenta es USD, convertir de COP a USD
+    if (tipoMonedaCuenta === 'USD') {
+      const convertido = Math.floor((monto / trm.valor) * 100) / 100; // Truncar a 2 decimales (no redondear)
+      console.log(`💱 Converting ${monto} COP to ${convertido} USD (TRM: ${trm.valor})`);
+      return convertido;
+    }
+    
+    // Si la cuenta es COP, mantener el monto original
+    console.log(`✅ Keeping COP value: ${monto}`);
+    return monto;
+  };
+
+  // Función para obtener monto con conversión de moneda
+  const obtenerMontoConConversion = (conceptoId: number, cuentaId: number, tipoMonedaCuenta?: string): number => {
+    const montoOriginal = obtenerMonto(conceptoId, cuentaId);
+    
+    if (!usarMultiMoneda || !tipoMonedaCuenta) {
+      return montoOriginal;
+    }
+    
+    return convertirMoneda(montoOriginal, tipoMonedaCuenta);
+  };
+
+  // Función para filtrar cuentas bancarias
+  const obtenerCuentasFiltradas = (): BankAccount[] => {
+    if (companiasFiltradas.length === 0 && bancosFiltrados.length === 0) {
+      // Si no hay filtros, mostrar todas las cuentas
+      return bankAccounts;
+    }
+    
+    return bankAccounts.filter(account => {
+      const cumpleCompania = companiasFiltradas.length === 0 || companiasFiltradas.includes(account.compania.id);
+      const cumpleBanco = bancosFiltrados.length === 0 || bancosFiltrados.includes(account.banco.id);
+      
+      return cumpleCompania && cumpleBanco;
+    });
+  };
+
+  // Funciones para manejar los filtros
+  const handleCompaniasChange = (nuevasCompanias: number[]) => {
+    setCompaniasFiltradas(nuevasCompanias);
+  };
+
+  const handleBancosChange = (nuevosBancos: number[]) => {
+    setBancosFiltrados(nuevosBancos);
+  };
+
+  // Funciones para GMF
+  const cargarConfiguracionGMF = async () => {
+    if (!user || (user.role !== 'administrador' && user.role !== 'tesoreria')) return;
+    
+    setLoadingGMFConfig(true);
+    try {
+      const token = localStorage.getItem('access_token');
+      
+      // Cargar configuraciones para todas las cuentas bancarias
+      const configMap = new Map<number, number[]>();
+      
+      for (const account of bankAccounts) {
+        const response = await fetch(`http://localhost:8000/api/v1/gmf-config/${account.id}`, {
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token && { Authorization: `Bearer ${token}` })
+          }
+        });
+        
+        if (response.ok) {
+          const config = await response.json();
+          if (config.conceptos_seleccionados && config.conceptos_seleccionados.length > 0) {
+            // Asegurar que siempre sean números (IDs)
+            const ids = config.conceptos_seleccionados.map((item: any) => {
+              if (typeof item === 'object' && item.id) return Number(item.id);
+              return Number(item);
+            }).filter((id: number) => !isNaN(id) && CONCEPTOS_GMF_PERMITIDOS.includes(id));
+            // Si queda vacío tras filtrado, usar todos permitidos
+            configMap.set(account.id, ids.length ? ids : [...CONCEPTOS_GMF_PERMITIDOS]);
+          } else {
+            // Si no hay configuración, usar todos los permitidos por defecto
+            configMap.set(account.id, [...CONCEPTOS_GMF_PERMITIDOS]);
+          }
+        }
+      }
+      
+      setGmfConfig(configMap);
+    } catch (error) {
+      console.error('Error cargando configuración GMF:', error);
+    } finally {
+      setLoadingGMFConfig(false);
+    }
+  };
+
+  const guardarConfiguracionGMF = async (cuentaId: number, conceptos: number[]) => {
+    if (!user || (user.role !== 'administrador' && user.role !== 'tesoreria')) return;
+    
+    try {
+      const token = localStorage.getItem('access_token');
+      const response = await fetch('http://localhost:8000/api/v1/gmf-config/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token && { Authorization: `Bearer ${token}` })
+        },
+        body: JSON.stringify({
+          cuenta_bancaria_id: cuentaId,
+          conceptos_seleccionados: conceptos  // Enviar IDs directamente
+        })
+      });
+      
+      if (response.ok) {
+        // Actualizar configuración local
+        const nuevaConfig = new Map(gmfConfig);
+        nuevaConfig.set(cuentaId, conceptos);
+        setGmfConfig(nuevaConfig);
+      }
+    } catch (error) {
+      console.error('Error guardando configuración GMF:', error);
+    }
+  };
+
+  const calcularGMF = (cuentaId: number): number => {
+    const conceptosIds = gmfConfig.get(cuentaId) || [];
+    if (conceptosIds.length === 0) return 0;
+    
+    let sumaConceptos = 0;
+    
+    // Sumar montos usando IDs directamente
+    conceptosIds.forEach(conceptoId => {
+      const monto = obtenerMonto(conceptoId, cuentaId);
+      sumaConceptos += monto;
+    });
+    
+    // Aplicar fórmula GMF: (suma * 4) / 1000
+    const gmfCalculado = (sumaConceptos * 4) / 1000;
+    
+    return gmfCalculado;
+  };
+
+  const abrirModalGMF = (cuentaId: number) => {
+    if (!user || (user.role !== 'administrador' && user.role !== 'tesoreria')) return;
+    
+    setCurrentGMFAccount(cuentaId);
+    
+    // Si no hay configuración, asignar todos los permitidos por defecto
+    if (!gmfConfig.has(cuentaId)) {
+      const nuevaConfig = new Map(gmfConfig);
+      nuevaConfig.set(cuentaId, [...CONCEPTOS_GMF_PERMITIDOS]);
+      setGmfConfig(nuevaConfig);
+    }
+    
+    setGmfModalOpen(true);
+  };
+
+  const cerrarModalGMF = () => {
+    setCurrentGMFAccount(null);
+    setGmfModalOpen(false);
+  };
+
+  const guardarConceptosGMF = async (cuentaId: number) => {
+    if (!cuentaId) return;
+    
+    const conceptos = gmfConfig.get(cuentaId) || [];
+    
+    // Guardar configuración y esperar respuesta
+    await guardarConfiguracionGMF(cuentaId, conceptos);
+    
+    // 🔄 IMPORTANTE: Forzar recálculo de GMF en backend después de guardar config
+    try {
+      const token = localStorage.getItem('access_token');
+      await fetch('http://localhost:8000/api/v1/gmf/recalculate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token && { Authorization: `Bearer ${token}` })
+        },
+        body: JSON.stringify({
+          fecha: selectedDate,
+          cuentaId: cuentaId
+        })
+      });
+      
+      // Recargar configuración GMF para asegurar que se actualice en el estado
+      await cargarConfiguracionGMF();
+      
+      // Recargar transacciones para mostrar el GMF actualizado
+      await cargarTransacciones(true);
+    } catch (error) {
+      console.error('Error forzando recálculo GMF:', error);
+    }
+    
+    cerrarModalGMF();
+  };
+
+  const handleLimpiarFiltros = () => {
+    setCompaniasFiltradas([]);
+    setBancosFiltrados([]);
+  };
   
   // Cargar todas las cuentas bancarias al inicializar el componente
   useEffect(() => {
@@ -133,6 +397,12 @@ const DashboardTesoreria: React.FC = () => {
         return 0;
       }
       
+      // Si no hay código definido (null, undefined, o string vacío), devolver el valor original
+      // Esto es importante para conceptos calculados que ya tienen el signo correcto en BD
+      if (!codigo || codigo.trim() === '') {
+        return valor; // Retornar valor original con su signo tal como está en BD
+      }
+      
       // Convertir a número absoluto primero para evitar doble negativos
       const valorAbsoluto = Math.abs(valor);
       
@@ -141,10 +411,10 @@ const DashboardTesoreria: React.FC = () => {
           return -valorAbsoluto;
         case 'I': // Ingresos - siempre positivos
           return valorAbsoluto;
-        case 'N': // Neutro - siempre positivos
-          return valorAbsoluto;
-        default: // Sin código o cualquier otro - siempre positivos
-          return valorAbsoluto;
+        case 'N': // Neutro - mantener signo original de BD (puede ser positivo o negativo)
+          return valor; // NO convertir a absoluto, respetar el signo de la BD
+        default: // Para cualquier otro código no reconocido, devolver valor original
+          return valor;
       }
     } catch (error) {
       console.error('Error en aplicarSignoSegunCodigo:', error);
@@ -210,11 +480,17 @@ const DashboardTesoreria: React.FC = () => {
     cargarTransaccionesDiaAnterior(selectedDate);
   }, [selectedDate]);
 
-  // Forzar actualización cuando cambien las transacciones
+  // Log cuando cambien las transacciones
   useEffect(() => {
-    setForceUpdate(prev => prev + 1);
-    console.log('🔄 Transacciones actualizadas, forzando re-render');
+    console.log('🔄 Transacciones actualizadas');
   }, [transacciones]);
+
+  // Cargar configuración GMF cuando cambie la fecha o las cuentas bancarias
+  useEffect(() => {
+    if (bankAccounts.length > 0) {
+      cargarConfiguracionGMF();
+    }
+  }, [selectedDate, bankAccounts]);
 
   // Función para convertir conceptos del backend al formato del frontend
   const convertirConceptosParaTabla = (conceptosBackend: ConceptoFlujoCaja[]): Concepto[] => {
@@ -225,6 +501,41 @@ const DashboardTesoreria: React.FC = () => {
       tipo: concepto.tipo,
       id: concepto.id // Incluir ID para vincular con transacciones
     }));
+  };
+
+  // Función para expandir cuentas por moneda manteniendo el orden
+  const expandirCuentasPorMoneda = (cuentas: BankAccount[]) => {
+    if (!usarMultiMoneda) {
+      return cuentas.map(cuenta => ({
+        ...cuenta,
+        cuenta_moneda_id: `${cuenta.id}_${cuenta.monedas[0] || 'COP'}`,
+        moneda_display: cuenta.monedas[0] || 'COP',
+        tipo_moneda: cuenta.monedas[0] || 'COP', // Agregar tipo_moneda para compatibilidad
+        nombre_con_moneda: `${cuenta.banco.nombre} ${cuenta.numero_cuenta.slice(-4)}`,
+        es_expansion: false
+      }));
+    }
+
+    const cuentasExpandidas: any[] = [];
+    
+    cuentas.forEach(cuenta => {
+      const monedas = cuenta.monedas && cuenta.monedas.length > 0 ? cuenta.monedas : ['COP'];
+      
+      monedas.forEach((moneda, index) => {
+        const cuentaExpandida = {
+          ...cuenta,
+          cuenta_moneda_id: `${cuenta.id}_${moneda}`,
+          moneda_display: moneda,
+          tipo_moneda: moneda, // Agregar tipo_moneda para compatibilidad
+          nombre_con_moneda: `${cuenta.banco.nombre} ${cuenta.numero_cuenta.slice(-4)} (${moneda})`,
+          es_expansion: index > 0 // Marcar si es una expansión de moneda adicional
+        };
+        console.log(`📊 Cuenta expandida:`, cuentaExpandida);
+        cuentasExpandidas.push(cuentaExpandida);
+      });
+    });
+
+    return cuentasExpandidas;
   };
 
   // Función para determinar categoría basada en el nombre del concepto
@@ -344,11 +655,14 @@ const DashboardTesoreria: React.FC = () => {
     try {
       let total = 0;
       
+      // Obtener cuentas filtradas para usar en todos los cálculos
+      const cuentasFiltradas = obtenerCuentasFiltradas();
+      
       // Manejar casos especiales de conceptos calculados
       if (concepto.nombre === 'SALDO INICIAL') {
         // Primero verificar si hay transacciones reales para SALDO INICIAL
-        if (concepto.id && bankAccounts.length > 0) {
-          total = bankAccounts.reduce((sum, account) => {
+        if (concepto.id && cuentasFiltradas.length > 0) {
+          total = cuentasFiltradas.reduce((sum, account) => {
             const valorCuenta = obtenerMontoConSignos(concepto.id!, account.id);
             const valorValido = isFinite(valorCuenta) ? valorCuenta : 0;
             return sum + valorValido;
@@ -366,8 +680,8 @@ const DashboardTesoreria: React.FC = () => {
       } else if (concepto.nombre === 'SALDO NETO INICIAL PAGADURÍA') {
         // Para SALDO NETO INICIAL PAGADURÍA, calcular sumando todas las cuentas
         
-        if (bankAccounts.length > 0) {
-          total = bankAccounts.reduce((sum, account) => {
+        if (cuentasFiltradas.length > 0) {
+          total = cuentasFiltradas.reduce((sum, account) => {
             const saldoNetoCuenta = calculateSaldoNetoPagaduria(account.id);
             return sum + (isFinite(saldoNetoCuenta) ? saldoNetoCuenta : 0);
           }, 0);
@@ -379,16 +693,19 @@ const DashboardTesoreria: React.FC = () => {
         return isFinite(total) ? total : 0;
       }
       
-      // Para conceptos normales, sumar el valor de todas las cuentas bancarias
-      if (concepto.id && bankAccounts.length > 0) {
-        total = bankAccounts.reduce((sum, account) => {
+      // Para conceptos normales, sumar el valor de todas las cuentas bancarias filtradas
+      if (concepto.id && cuentasFiltradas.length > 0) {
+        total = cuentasFiltradas.reduce((sum, account) => {
           const valorCuenta = obtenerMontoConSignos(concepto.id!, account.id);
           const valorValido = isFinite(valorCuenta) ? valorCuenta : 0;
           return sum + valorValido;
         }, 0);
       } else if (concepto.id) {
-        // Fallback: si no hay cuentas cargadas, usar transacciones directamente
-        const transaccionesConcepto = transacciones.filter(t => t.concepto_id === concepto.id);
+        // Fallback: si no hay cuentas cargadas, usar transacciones directamente (filtradas por cuentas)
+        const idsConCuentasFiltradas = cuentasFiltradas.map(c => c.id);
+        const transaccionesConcepto = transacciones.filter(t => 
+          t.concepto_id === concepto.id && t.cuenta_id !== null && idsConCuentasFiltradas.includes(t.cuenta_id)
+        );
         total = transaccionesConcepto.reduce((sum, t) => {
           const monto = Number(t.monto) || 0;
           return sum + (isFinite(monto) ? monto : 0);
@@ -534,30 +851,15 @@ const DashboardTesoreria: React.FC = () => {
   // Función para calcular el SALDO FINAL CUENTAS del día anterior (para usar como SALDO INICIAL del día actual)
   const calculateSaldoInicialDesdeDiaAnterior = (cuentaId?: number) => {
     try {
-      console.log('🔍 Calculando saldo inicial desde día anterior...', {
-        fechaSeleccionada: selectedDate,
-        cuentaId: cuentaId || 'todas',
-        tieneTransaccionesDiaAnterior: !!transaccionesDiaAnterior,
-        cantidadTransacciones: transaccionesDiaAnterior?.length || 0
-      });
-
       // Si no hay transacciones del día anterior, el saldo inicial es 0
       if (!transaccionesDiaAnterior || transaccionesDiaAnterior.length === 0) {
-        console.log('❌ No hay transacciones del día anterior, saldo inicial = 0');
         return 0;
       }
 
       // Buscar el concepto "SALDO FINAL CUENTAS" 
       const saldoFinalCuentasConcepto = conceptos.find(c => c.nombre === 'SALDO FINAL CUENTAS');
       
-      console.log('🎯 Buscando concepto SALDO FINAL CUENTAS:', {
-        conceptoEncontrado: !!saldoFinalCuentasConcepto,
-        conceptoId: saldoFinalCuentasConcepto?.id,
-        todosLosConceptos: conceptos.map(c => ({ id: c.id, nombre: c.nombre }))
-      });
-      
       if (!saldoFinalCuentasConcepto) {
-        console.warn('❌ No se encontró el concepto SALDO FINAL CUENTAS');
         return 0;
       }
 
@@ -568,34 +870,14 @@ const DashboardTesoreria: React.FC = () => {
         (cuentaId ? t.cuenta_id === cuentaId : true)
       );
 
-      console.log('📊 Transacciones SALDO FINAL CUENTAS del día anterior:', {
-        conceptoId: saldoFinalCuentasConcepto.id,
-        transaccionesEncontradas: transaccionesSaldoFinal.length,
-        transacciones: transaccionesSaldoFinal.map(t => ({
-          id: t.id,
-          monto: t.monto,
-          cuenta_id: t.cuenta_id,
-          fecha: t.fecha
-        }))
-      });
-
       // Sumar los montos de SALDO FINAL CUENTAS del día anterior
       const saldoFinalDiaAnterior = transaccionesSaldoFinal.reduce((sum, t) => {
         const monto = Number(t.monto) || 0;
-        console.log(`  💰 Sumando transacción ID ${t.id}: ${monto}`);
         return sum + monto;
       }, 0);
 
-      console.log('✅ Saldo inicial calculado desde SALDO FINAL CUENTAS del día anterior:', {
-        conceptoId: saldoFinalCuentasConcepto.id,
-        cuentaId: cuentaId || 'todas',
-        transaccionesEncontradas: transaccionesSaldoFinal.length,
-        saldoFinalDiaAnterior
-      });
-
       // Si el resultado es NaN, undefined, null o no es un número válido, devolver 0
       if (isNaN(saldoFinalDiaAnterior) || !isFinite(saldoFinalDiaAnterior)) {
-        console.warn('❌ Resultado inválido, devolviendo 0');
         return 0;
       }
 
@@ -677,8 +959,8 @@ const DashboardTesoreria: React.FC = () => {
           mensaje: resultado.message
         });
         
-        // Forzar actualización de las transacciones sin recargar la página
-        setForceUpdate(prev => prev + 1);
+        // Actualización completada
+        console.log('✅ Saldos iniciales procesados correctamente');
       }
       
     } catch (error) {
@@ -688,7 +970,7 @@ const DashboardTesoreria: React.FC = () => {
   };
 
   // Función wrapper para obtener montos aplicando la lógica de signos automáticos
-  const obtenerMontoConSignos = (conceptoId: number, cuentaId: number): number => {
+  const obtenerMontoConSignos = (conceptoId: number, cuentaId: number, tipoMonedaCuenta?: string): number => {
     try {
       // Validar parámetros de entrada
       if (!conceptoId || !cuentaId) {
@@ -696,18 +978,8 @@ const DashboardTesoreria: React.FC = () => {
         return 0;
       }
       
-      // Debug para SALDO INICIAL
-      if (conceptoId === 1) {
-        console.log('🔍 DEBUG SALDO INICIAL:', { conceptoId, cuentaId, selectedDate });
-      }
-      
-      // Obtener el monto original
-      const montoOriginal = obtenerMonto(conceptoId, cuentaId);
-      
-      // Debug para SALDO INICIAL
-      if (conceptoId === 1) {
-        console.log('📊 Monto obtenido:', montoOriginal);
-      }
+      // Obtener el monto original con conversión de moneda
+      const montoOriginal = obtenerMontoConConversion(conceptoId, cuentaId, tipoMonedaCuenta);
       
       // Validar que el monto sea un número válido
       if (!isFinite(montoOriginal) || isNaN(montoOriginal)) {
@@ -723,8 +995,14 @@ const DashboardTesoreria: React.FC = () => {
         return montoOriginal; // Si no encontramos el concepto, devolver valor original
       }
       
-      // Aplicar la lógica de signos según el código
-      const resultado = aplicarSignoSegunCodigo(montoOriginal, concepto.codigo || '');
+      // Para conceptos neutros (N) o sin código, devolver el valor tal como está en BD
+      // Solo aplicar lógica de signos para E (Egreso) e I (Ingreso)
+      if (!concepto.codigo || concepto.codigo.trim() === '' || concepto.codigo.trim().toUpperCase() === 'N') {
+        return montoOriginal; // Respetar el signo almacenado en BD
+      }
+      
+      // Aplicar la lógica de signos SOLO para conceptos E e I
+      const resultado = aplicarSignoSegunCodigo(montoOriginal, concepto.codigo);
       
       return isFinite(resultado) ? resultado : 0;
       
@@ -766,13 +1044,41 @@ const DashboardTesoreria: React.FC = () => {
         companiaId
       });
       
-      // OPCIÓN 1: Respetar el valor que ingresa el usuario sin modificar el signo
-      // El usuario es responsable de ingresar el signo correcto
-      const montoFinal = monto;
+      // 🔧 CORRECCIÓN: Aplicar lógica de signos según el código del concepto
+      // E (Egreso) → Siempre negativo
+      // I (Ingreso) → Siempre positivo  
+      // N (Neutro) o sin código → Respetar el signo ingresado por el usuario
+      let montoFinal = monto;
+      
+      if (concepto.codigo && concepto.codigo.trim() !== '' && concepto.codigo.trim().toUpperCase() !== 'N') {
+        // Aplicar lógica de signos automática SOLO para E (Egreso) e I (Ingreso)
+        montoFinal = aplicarSignoSegunCodigo(Math.abs(monto), concepto.codigo);
+        console.log('🔧 Signo aplicado automáticamente:', {
+          concepto: concepto.nombre,
+          montoOriginal: monto,
+          montoAbsoluto: Math.abs(monto),
+          codigo: concepto.codigo,
+          montoFinal: montoFinal,
+          razon: 'Concepto tipo E o I con código definido',
+          logicaAplicada: concepto.codigo.toUpperCase() === 'E' ? 'Egreso → Negativo' : 
+                         concepto.codigo.toUpperCase() === 'I' ? 'Ingreso → Positivo' : 'Código desconocido'
+        });
+      } else {
+        // Para conceptos NEUTROS (N) o sin código, respetar el valor ingresado por el usuario
+        montoFinal = monto;
+        console.log('✋ Valor respetado tal como ingresó el usuario:', {
+          concepto: concepto.nombre,
+          codigo: concepto.codigo || 'sin código',
+          montoIngresadoPorUsuario: monto,
+          montoFinal: montoFinal,
+          esNegativo: monto < 0,
+          razon: concepto.codigo?.toUpperCase() === 'N' ? 'Concepto Neutro - el usuario define el signo' : 'Concepto sin código definido'
+        });
+      }
       
       console.log('📤 Enviando al backend:', {
         montoFinal,
-        sinModificacion: true
+        aplicacionSignos: concepto.codigo ? 'automática' : 'manual'
       });
       
       // Llamar a la función original con el monto sin modificar
@@ -795,6 +1101,11 @@ const DashboardTesoreria: React.FC = () => {
           concepto: concepto.nombre,
           monto: montoFinal
         });
+        
+        // 🔄 SOLUCIÓN: Forzar recarga completa para obtener valores auto-calculados actualizados
+        console.log('🔄 Recargando transacciones para obtener auto-cálculos actualizados...');
+        await recargarTransaccionesCompleto(); // Usar la función específica para recarga forzada
+        console.log('✅ Transacciones recargadas exitosamente');
       }
       
       return resultado;
@@ -858,6 +1169,26 @@ const DashboardTesoreria: React.FC = () => {
               )}
             </div>
             <p className="text-gray-600 dark:text-gray-400">Flujo de caja por compañías - {user?.name}</p>
+            {/* Indicador TRM */}
+            <div className="flex items-center space-x-2 mt-1">
+              <span className="text-sm text-gray-500 dark:text-gray-400">TRM:</span>
+              {trmLoading ? (
+                <span className="text-sm text-gray-400">Cargando...</span>
+              ) : trmError ? (
+                <span className="text-sm text-red-500" title={trmError}>Error al cargar TRM</span>
+              ) : trm ? (
+                <div className="flex items-center space-x-1">
+                  <span className="text-sm font-semibold text-blue-600 dark:text-blue-400">
+                    ${parseFloat(trm.valor.toString()).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                  <span className="text-xs text-gray-400">
+                    ({trm.fecha})
+                  </span>
+                </div>
+              ) : (
+                <span className="text-sm text-gray-400">No disponible</span>
+              )}
+            </div>
           </div>
         </div>
         
@@ -905,29 +1236,64 @@ const DashboardTesoreria: React.FC = () => {
             )}
           </div>
           
-          <button className="flex items-center space-x-2 px-3 py-2 bg-bolivar-600 text-white rounded-lg hover:bg-bolivar-700 transition-colors text-sm">
+          {/* Toggle Multi-Moneda */}
+          <div className="flex items-center space-x-2">
+            <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              Multi-Moneda
+            </label>
+            <button
+              onClick={() => setUsarMultiMoneda(!usarMultiMoneda)}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                usarMultiMoneda ? 'bg-green-600' : 'bg-gray-200 dark:bg-gray-700'
+              }`}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  usarMultiMoneda ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
+            </button>
+          </div>
+          
+          <button className="session-activity flex items-center space-x-2 px-3 py-2 bg-bolivar-600 text-white rounded-lg hover:bg-bolivar-700 transition-colors text-sm">
             <RefreshCw className="h-4 w-4" />
             <span>Actualizar</span>
           </button>
           
-          <button className="flex items-center space-x-2 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm">
+          <button className="session-activity flex items-center space-x-2 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm">
             <Download className="h-4 w-4" />
             <span>Exportar</span>
           </button>
         </div>
       </div>
 
+      {/* Filtros */}
+      <FiltrosDashboard
+        bankAccounts={bankAccounts}
+        companiasFiltradas={companiasFiltradas}
+        bancosFiltrados={bancosFiltrados}
+        onCompaniasChange={handleCompaniasChange}
+        onBancosChange={handleBancosChange}
+        onLimpiarFiltros={handleLimpiarFiltros}
+      />
+
       {/* Tabla estilo Excel - SIN fechas, solo compañías y cuentas */}
       <div className="bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg overflow-hidden shadow-lg">
         <div className="overflow-x-auto">
+          {(() => {
+            // Obtener cuentas filtradas y expandir por moneda si está activado el modo multi-moneda
+            const cuentasFiltradas = obtenerCuentasFiltradas();
+            const cuentasExpandidas = expandirCuentasPorMoneda(cuentasFiltradas);
+            
+            return (
           <table className="w-full border-collapse text-xs">
             <thead>
               {/* FILA 1 - SOLO COMPAÑÍAS */}
               <tr>
                 <th colSpan={3} className="bg-white dark:bg-gray-800 border border-gray-400 dark:border-gray-500 sticky left-0 z-20 min-w-[100px]"></th>
                 {/* Compañías reales desde la base de datos */}
-                {bankAccounts.map((account) => (
-                  <th key={`company-${account.id}`} className="bg-blue-200 dark:bg-blue-800 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-900 dark:text-white font-bold text-center min-w-[120px]">
+                {cuentasExpandidas.map((account) => (
+                  <th key={`company-${account.cuenta_moneda_id}`} className="bg-blue-200 dark:bg-blue-800 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-900 dark:text-white font-bold text-center min-w-[120px]">
                     {account.compania?.nombre || 'COMPAÑÍA DESCONOCIDA'}
                   </th>
                 ))}
@@ -941,9 +1307,9 @@ const DashboardTesoreria: React.FC = () => {
               <tr>
                 <th colSpan={3} className="bg-white dark:bg-gray-800 border border-gray-400 dark:border-gray-500 sticky left-0 z-20 min-w-[100px]"></th>
                 {/* Bancos reales desde la base de datos */}
-                {bankAccounts.map((account) => (
-                  <th key={`bank-${account.id}`} className="bg-blue-100 dark:bg-blue-900/50 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-800 dark:text-gray-200 font-semibold text-center text-xs">
-                    {account.banco?.nombre || 'BANCO DESCONOCIDO'}
+                {cuentasExpandidas.map((account) => (
+                  <th key={`bank-${account.cuenta_moneda_id}`} className="bg-blue-100 dark:bg-blue-900/50 border border-gray-400 dark:border-gray-500 px-2 py-1 text-gray-800 dark:text-gray-200 font-semibold text-center text-xs">
+                    {account.nombre_con_moneda || 'BANCO DESCONOCIDO'}
                   </th>
                 ))}
                 {/* Columna TOTALES */}
@@ -964,9 +1330,18 @@ const DashboardTesoreria: React.FC = () => {
                   CONCEPTO
                 </th>
                 {/* Cuentas bancarias reales desde la base de datos */}
-                {bankAccounts.map((account) => (
-                  <th key={account.id} className="bg-gray-100 dark:bg-gray-700 border border-gray-400 dark:border-gray-500 px-1 py-1 text-gray-700 dark:text-gray-300 font-medium text-center text-xs">
-                    {account.numero_cuenta}
+                {cuentasExpandidas.map((account) => (
+                  <th key={account.cuenta_moneda_id} className="bg-gray-100 dark:bg-gray-700 border border-gray-400 dark:border-gray-500 px-1 py-1 text-gray-700 dark:text-gray-300 font-medium text-center text-xs">
+                    <div className="flex flex-col">
+                      <span>{account.numero_cuenta}</span>
+                      {usarMultiMoneda && (
+                        <span className={`px-1 py-0.5 rounded text-xs font-bold ${
+                          account.moneda_display === 'USD' ? 'bg-green-200 text-green-800' : 'bg-yellow-200 text-yellow-800'
+                        }`}>
+                          {account.moneda_display}
+                        </span>
+                      )}
+                    </div>
                   </th>
                 ))}
                 {/* Columna TOTALES */}
@@ -1013,7 +1388,7 @@ const DashboardTesoreria: React.FC = () => {
 
                   {/* CELDAS DE DATOS - Solo cuentas bancarias reales */}
                   {/* Columnas de cuentas bancarias reales */}
-                  {bankAccounts.map((account) => {
+                  {cuentasExpandidas.map((account) => {
                     // Verificar si es el concepto "SALDO NETO INICIAL PAGADURÍA"
                     const esSaldoNetoPagaduria = concepto.nombre === 'SALDO NETO INICIAL PAGADURÍA';
                     // Verificar si es el concepto "SALDO INICIAL"
@@ -1024,7 +1399,7 @@ const DashboardTesoreria: React.FC = () => {
                       const valorCalculado = safeNumericValue(calculateSaldoNetoPagaduria(account.id));
                       
                       return (
-                        <td key={`data-${account.id}`} className="border border-gray-400 dark:border-gray-500 px-1 py-1 text-center text-xs bg-yellow-50 dark:bg-yellow-900/20">
+                        <td key={`data-${account.cuenta_moneda_id}`} className="border border-gray-400 dark:border-gray-500 px-1 py-1 text-center text-xs bg-yellow-50 dark:bg-yellow-900/20">
                           {valorCalculado !== 0 ? (
                             <span className={`font-bold ${valorCalculado < 0 ? 'text-red-700 dark:text-red-400' : 'text-green-700 dark:text-green-400'}`}>
                               {valorCalculado < 0 ? `(${formatCurrency(Math.abs(valorCalculado))})` : formatCurrency(valorCalculado)}
@@ -1051,7 +1426,7 @@ const DashboardTesoreria: React.FC = () => {
                       const valorSaldoInicialFinal = safeNumericValue(valorSaldoInicial);
                       
                       return (
-                        <td key={`data-${account.id}`} className="border border-gray-400 dark:border-gray-500 px-1 py-1 text-center text-xs bg-purple-50 dark:bg-purple-900/20">
+                        <td key={`data-${account.cuenta_moneda_id}`} className="border border-gray-400 dark:border-gray-500 px-1 py-1 text-center text-xs bg-purple-50 dark:bg-purple-900/20">
                           {valorSaldoInicialFinal !== 0 ? (
                             <span className={`font-bold ${valorSaldoInicialFinal < 0 ? 'text-red-700 dark:text-red-400' : 'text-green-700 dark:text-green-400'}`}>
                               {valorSaldoInicialFinal < 0 ? `(${formatCurrency(Math.abs(valorSaldoInicialFinal))})` : formatCurrency(valorSaldoInicialFinal)}
@@ -1061,18 +1436,51 @@ const DashboardTesoreria: React.FC = () => {
                           )}
                         </td>
                       );
+                    } else if (concepto.nombre === 'GMF') {
+                      // Celda especial para GMF - LEER VALOR PERSISTIDO en BD, no calcular localmente
+                      // El backend ya persiste automáticamente el GMF cuando se crean/actualizan transacciones
+                      const valorGMFPersistido = concepto.id ? obtenerMonto(concepto.id, account.id) : 0;
+                      const valorSeguro = safeNumericValue(valorGMFPersistido);
+                      
+                      return (
+                        <td key={`data-${account.cuenta_moneda_id}`} className="border border-gray-400 dark:border-gray-500 px-1 py-1 text-center text-xs bg-orange-50 dark:bg-orange-900/20 relative">
+                          <div className="flex items-center justify-between">
+                            <div className="flex-1 text-center">
+                              {valorSeguro !== 0 ? (
+                                <span className={`font-medium ${valorSeguro < 0 ? 'text-red-700 dark:text-red-400' : 'text-green-700 dark:text-green-400'}`}>
+                                  {valorSeguro < 0 ? `(${formatCurrency(Math.abs(valorSeguro))})` : formatCurrency(valorSeguro)}
+                                </span>
+                              ) : (
+                                <span className="text-gray-400 dark:text-gray-500">—</span>
+                              )}
+                            </div>
+                            
+                            {/* Ícono de configuración - Alineado a la derecha */}
+                            {(user?.role === 'administrador' || user?.role === 'tesoreria') && (
+                              <button
+                                onClick={() => abrirModalGMF(account.id)}
+                                className="p-1 text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-200 transition-colors hover:bg-green-100 dark:hover:bg-green-900/20 rounded"
+                                title="Configurar conceptos GMF"
+                              >
+                                <Settings className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      );
                     } else {
                       // Para otros conceptos, usar celda editable normal
-                      const valorCuenta = concepto.id ? obtenerMontoConSignos(concepto.id, account.id) : 0;
+                      const valorCuenta = concepto.id ? obtenerMontoConSignos(concepto.id, account.id, account.tipo_moneda) : 0;
                       const valorSeguro = safeNumericValue(valorCuenta);
                       
                       return (
-                        <td key={`data-${account.id}`} className="border border-gray-400 dark:border-gray-500 px-1 py-1 text-center text-xs">
+                        <td key={`data-${account.cuenta_moneda_id}`} className="border border-gray-400 dark:border-gray-500 px-1 py-1 text-center text-xs">
                           <CeldaEditable
                             valor={valorSeguro}
                             conceptoId={concepto.id || 0}
                             cuentaId={account.id}
                             companiaId={account.compania.id}
+                            currency={account.tipo_moneda}
                             onGuardar={guardarTransaccionConSignos}
                             disabled={!concepto.id || transaccionesLoading || isConceptoAutoCalculado(concepto.id)}
                           />
@@ -1104,7 +1512,7 @@ const DashboardTesoreria: React.FC = () => {
 
               {/* SEPARADOR */}
               <tr>
-                <td colSpan={4 + bankAccounts.length} 
+                <td colSpan={4 + cuentasExpandidas.length} 
                     className="bg-gray-300 dark:bg-gray-600 h-2 border border-gray-400 dark:border-gray-500"></td>
               </tr>
 
@@ -1116,12 +1524,12 @@ const DashboardTesoreria: React.FC = () => {
                   SUB-TOTAL TESORERÍA
                 </td>
                 {/* Columnas de cuentas bancarias reales */}
-                {bankAccounts.map((account) => {
+                {cuentasExpandidas.map((account) => {
                   const subtotalCuenta = calculateSubtotalTesoreria(account.id);
                   const subtotalValido = !isNaN(subtotalCuenta) && isFinite(subtotalCuenta) ? subtotalCuenta : 0;
                   
                   return (
-                    <td key={`subtotal-${account.id}`} className="border border-gray-400 dark:border-gray-500 px-2 py-2 text-center font-bold text-gray-900 dark:text-white">
+                    <td key={`subtotal-${account.cuenta_moneda_id}`} className="border border-gray-400 dark:border-gray-500 px-2 py-2 text-center font-bold text-gray-900 dark:text-white">
                       {subtotalValido !== 0 ? (
                         <span className={subtotalValido < 0 ? 'text-red-700 dark:text-red-400' : 'text-green-700 dark:text-green-400'}>
                           {subtotalValido < 0 ? `(${formatCurrency(Math.abs(subtotalValido))})` : formatCurrency(subtotalValido)}
@@ -1138,10 +1546,8 @@ const DashboardTesoreria: React.FC = () => {
                     // CORREGIDO: Sumar el SUB-TOTAL TESORERÍA de cada cuenta individual
                     const totalSubtotal = bankAccounts.reduce((sum, account) => {
                       const subtotalCuenta = calculateSubtotalTesoreria(account.id);
-                      console.log(`🧮 SUB-TOTAL TESORERÍA - Cuenta ${account.numero_cuenta}: ${subtotalCuenta}`);
                       return sum + (Number(subtotalCuenta) || 0);
                     }, 0);
-                    console.log(`🎯 SUB-TOTAL TESORERÍA - TOTAL CALCULADO: ${totalSubtotal}`);
                     
                     const totalValido = !isNaN(totalSubtotal) && isFinite(totalSubtotal) ? totalSubtotal : 0;
                     
@@ -1164,11 +1570,11 @@ const DashboardTesoreria: React.FC = () => {
                   SALDO FINAL CUENTAS
                 </td>
                 {/* Columnas de cuentas bancarias reales */}
-                {bankAccounts.map((account) => {
+                {cuentasExpandidas.map((account) => {
                   const valorSaldoFinal = calculateSaldoFinalCuentas(account.id);
                   
                   return (
-                    <td key={`saldo-final-${account.id}`} className="border border-gray-400 dark:border-gray-500 px-1 py-2 text-center text-xs bg-blue-50 dark:bg-blue-900/20">
+                    <td key={`saldo-final-${account.cuenta_moneda_id}`} className="border border-gray-400 dark:border-gray-500 px-1 py-2 text-center text-xs bg-blue-50 dark:bg-blue-900/20">
                       {valorSaldoFinal !== 0 ? (
                         <span className={`font-bold ${valorSaldoFinal < 0 ? 'text-red-700 dark:text-red-400' : 'text-green-700 dark:text-green-400'}`}>
                           {valorSaldoFinal < 0 ? `(${formatCurrency(Math.abs(valorSaldoFinal))})` : formatCurrency(valorSaldoFinal)}
@@ -1185,10 +1591,8 @@ const DashboardTesoreria: React.FC = () => {
                     // CORREGIDO: Sumar el SALDO FINAL CUENTAS de cada cuenta individual
                     const totalSaldoFinal = bankAccounts.reduce((sum, account) => {
                       const saldoFinalCuenta = calculateSaldoFinalCuentas(account.id);
-                      console.log(`🧮 SALDO FINAL CUENTAS - Cuenta ${account.numero_cuenta}: ${saldoFinalCuenta}`);
                       return sum + (Number(saldoFinalCuenta) || 0);
                     }, 0);
-                    console.log(`🎯 SALDO FINAL CUENTAS - TOTAL CALCULADO: ${totalSaldoFinal}`);
                     
                     return totalSaldoFinal !== 0 ? (
                       <span className={`font-bold ${totalSaldoFinal < 0 ? 'text-red-700 dark:text-red-400' : 'text-green-700 dark:text-green-400'}`}>
@@ -1204,6 +1608,8 @@ const DashboardTesoreria: React.FC = () => {
              
             </tbody>
           </table>
+            );
+          })()}
         </div>
       </div>
 
@@ -1281,6 +1687,119 @@ const DashboardTesoreria: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Modal de configuración GMF */}
+      {gmfModalOpen && currentGMFAccount && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full m-4">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                  Configurar Conceptos GMF
+                </h3>
+                <button
+                  onClick={cerrarModalGMF}
+                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+
+              <div className="mb-4">
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+                  Selecciona los conceptos que se incluirán en el cálculo del GMF para esta cuenta:
+                </p>
+                
+                {loadingGMFConfig ? (
+                                  <div className="flex items-center justify-center py-8">
+                                    <RefreshCw className="w-6 h-6 animate-spin text-gray-400" />
+                                    <span className="ml-2 text-gray-600 dark:text-gray-400">Cargando configuración...</span>
+                                  </div>
+                                ) : (
+                                  <div>
+                                    <div className="flex justify-between items-center mb-2 text-xs text-gray-600 dark:text-gray-400">
+                                      <span>Seleccionados: {gmfConfig.get(currentGMFAccount)?.length || 0} / {CONCEPTOS_GMF_PERMITIDOS.length}</span>
+                                      <div className="space-x-2">
+                                        <button
+                                          onClick={() => {
+                                            const nuevaConfig = new Map(gmfConfig);
+                                            nuevaConfig.set(currentGMFAccount, [...CONCEPTOS_GMF_PERMITIDOS]);
+                                            setGmfConfig(nuevaConfig);
+                                          }}
+                                          className="px-2 py-1 border rounded text-xs hover:bg-gray-50 dark:hover:bg-gray-700"
+                                        >Todos</button>
+                                        <button
+                                          onClick={() => {
+                                            const nuevaConfig = new Map(gmfConfig);
+                                            nuevaConfig.set(currentGMFAccount, []);
+                                            setGmfConfig(nuevaConfig);
+                                          }}
+                                          className="px-2 py-1 border rounded text-xs hover:bg-gray-50 dark:hover:bg-gray-700"
+                                        >Limpiar</button>
+                                      </div>
+                                    </div>
+                                    <div className="max-h-64 overflow-y-auto border rounded-md p-3 space-y-2">
+                                      {conceptosTesoreria
+                                        .filter(concepto => CONCEPTOS_GMF_PERMITIDOS.includes(concepto.id || 0))
+                                        .map((concepto) => {
+                                          const isSelected = gmfConfig.get(currentGMFAccount)?.includes(concepto.id || 0) || false;
+                                          return (
+                                            <label key={concepto.id} className="flex items-center space-x-2 cursor-pointer">
+                                              <input
+                                                type="checkbox"
+                                                checked={isSelected}
+                                                onChange={(e) => {
+                                                  const conceptosActuales = gmfConfig.get(currentGMFAccount) || [];
+                                                  let nuevosConceptos;
+                                                  if (e.target.checked) {
+                                                    nuevosConceptos = [...conceptosActuales, concepto.id || 0];
+                                                  } else {
+                                                    nuevosConceptos = conceptosActuales.filter(id => id !== concepto.id);
+                                                  }
+                                                  const nuevaConfig = new Map(gmfConfig);
+                                                  nuevaConfig.set(currentGMFAccount, nuevosConceptos);
+                                                  setGmfConfig(nuevaConfig);
+                                                }}
+                                                className="w-4 h-4 text-orange-600 border-gray-300 rounded focus:ring-orange-500"
+                                              />
+                                              <span className="text-sm text-gray-700 dark:text-gray-300">{concepto.nombre}</span>
+                                            </label>
+                                          );
+                                        })}
+                                    </div>
+                                  </div>
+                                )}
+              </div>
+
+              <div className="flex justify-end space-x-3">
+                <button
+                  onClick={cerrarModalGMF}
+                  className="px-4 py-2 text-gray-600 dark:text-gray-400 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={() => guardarConceptosGMF(currentGMFAccount)}
+                  disabled={loadingGMFConfig}
+                  className="px-4 py-2 bg-orange-600 text-white rounded-md hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center"
+                >
+                  {loadingGMFConfig ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                      Guardando...
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-4 h-4 mr-2" />
+                      Guardar
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

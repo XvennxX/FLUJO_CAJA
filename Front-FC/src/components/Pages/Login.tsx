@@ -42,15 +42,21 @@ const Login: React.FC = () => {
       {/* Panel izquierdo - Formulario */}
       <div className="flex-1 flex flex-col bg-gray-100 dark:bg-gray-700">
         {/* Header con logo */}
-        <div className="p-8">
-          <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-bolivar-500 rounded-lg flex items-center justify-center">
-              <span className="text-white font-bold text-lg">SB</span>
-            </div>
-            <div>
-              <h1 className="text-xl font-bold text-gray-900 dark:text-white">SEGUROS BOLÍVAR</h1>
-              <p className="text-sm text-gray-600 dark:text-gray-400">SIFCO - Sistema Web</p>
-            </div>
+        <div className="px-8 pt-6 pb-3">
+          <div className="flex items-center space-x-8">
+            {/* Logo SIFCO */}
+            <img 
+              src="/logos/sifco-logo.png" 
+              alt="SIFCO - Sistema de Flujo de Caja" 
+              className="h-20 w-auto object-contain"
+            />
+            
+            {/* Logo Seguros Bolívar */}
+            <img 
+              src="/logos/seguros-bolivar-completo.png" 
+              alt="Seguros Bolívar" 
+              className="h-16 w-auto object-contain"
+            />
           </div>
         </div>
 

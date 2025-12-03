@@ -8,19 +8,59 @@ Sistema integral de gestión de flujo de caja desarrollado para Bolívar, que in
 FLUJO_CAJA/
 ├── 📁 Back-FC/              # Backend - API REST con FastAPI
 │   ├── app/                # Código principal de la aplicación
-│   ├── scripts/            # Scripts organizados (TRM, setup, utils)
-│   ├── docs/               # Documentación del backend
+│   ├── tests/              # Tests automatizados (unit + integration)
+│   ├── scripts/            # Scripts organizados por funcionalidad
+│   │   ├── setup/         # Configuración inicial del sistema
+│   │   ├── maintenance/   # Scripts de mantenimiento y corrección
+│   │   ├── trm/           # Sistema TRM automático
+│   │   ├── utils/         # Utilidades generales
+│   │   └── migrations/    # Migraciones de base de datos
+│   ├── tools/              # Herramientas de verificación y debug
+│   ├── docs/               # Documentación técnica del backend
+│   ├── docker/             # Configuración Docker
+│   ├── logs/               # Logs del sistema (no versionados)
 │   ├── requirements.txt    # Dependencias Python
 │   └── README.md          # Documentación del backend
 ├── 📁 Front-FC/             # Frontend - React + TypeScript
 │   ├── src/               # Código fuente React
 │   ├── scripts/           # Scripts de build y deploy
+│   │   ├── build/         # Scripts de construcción
+│   │   ├── deploy/        # Scripts de despliegue
+│   │   └── utils/         # Utilidades de análisis
 │   ├── docs/              # Documentación del frontend
 │   ├── package.json       # Dependencias Node.js
 │   └── README.md         # Documentación del frontend
+├── 📁 config/               # ⭐ Configuración centralizada
+│   ├── docker-compose.yml # Docker Compose para servicios
+│   ├── Makefile           # Comandos útiles del proyecto
+│   └── README.md         # Documentación de configuración
+├── 📁 scripts/              # ⭐ Scripts del proyecto
+│   ├── setup/             # Scripts de configuración inicial
+│   │   ├── setup.ps1     # Setup para Windows
+│   │   └── setup.sh      # Setup para Linux/Mac
+│   └── README.md         # Documentación de scripts
+├── 📁 tools/                # Herramientas y utilidades
+│   ├── debug/             # Scripts de debug y análisis
+│   ├── maintenance/       # Scripts de mantenimiento
+│   └── README.md         # Documentación de herramientas
 ├── 📁 docs/                 # Documentación global del proyecto
+│   ├── API.md             # Documentación de API
+│   ├── GETTING_STARTED.md # Guía de inicio rápido
+│   ├── SISTEMA_ROLES_PERMISOS.md # Sistema RBAC
+│   ├── SOLUCION_GMF_AUTOCALCULO.md # Sistema GMF
+│   ├── api/               # Documentación específica de API
+│   ├── architecture/      # Arquitectura del sistema
+│   └── development/       # Guías de desarrollo
+├── 📁 Excel/                # Archivos Excel para cargue masivo (no versionados)
+│   └── README.md          # Documentación de uso
+├── 📁 .github/              # Configuración de GitHub (CI/CD, templates)
 ├── 📁 .venv/               # Entorno virtual Python (local)
+├── .editorconfig           # Configuración del editor
+├── .env.example            # Ejemplo de variables de entorno
 ├── .gitignore              # Archivos ignorados por Git
+├── CHANGELOG.md            # Historial de cambios
+├── CONTRIBUTING.md         # Guía de contribución
+├── LICENSE                 # Licencia del proyecto
 └── README.md              # Este archivo - Documentación principal
 ```
 
@@ -114,7 +154,7 @@ npm run dev
 -- Crear base de datos
 CREATE DATABASE flujo_caja CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
--- Variables de entorno (.env en Back-FC)
+--  Variables de entorno (.env en Back-FC)
 DB_HOST=localhost
 DB_PORT=3306
 DB_USER=root
@@ -131,14 +171,13 @@ SECRET_KEY=tu_clave_secreta
 - **API Docs (Swagger):** http://localhost:8000/docs
 - **ReDoc:** http://localhost:8000/redoc
 
-### **Usuarios de Prueba**
-| Rol | Email | Password | Dashboard |
-|-----|-------|----------|-----------|
-| Mesa de Dinero | mesadinero@bolivar.com | mesa123 | Flujo de caja principal |
-| Pagaduría | pagaduria@bolivar.com | pagaduria123 | Gestión de nómina |
-| Tesorería | tesoreria@bolivar.com | tesoreria123 | Análisis de liquidez |
-
-## 📊 **Funcionalidades por Módulo**
+### **📋 Credenciales de Prueba (Desarrollo - Locales)**
+| Rol | Usuario | Email | Password | Dashboard |
+|-----|---------|-------|----------|-----------|  
+| **Administrador** | Carlos Gómez | carlos.gomez@flujo.com | admin123 | Administración completa |
+| **Tesorería** | María López | maria.lopez@flujo.com | tesoreria123 | Análisis de liquidez |
+| **Pagaduría** | Javier Ruiz | javier.ruiz@flujo.com | pagaduria123 | Gestión de nómina |
+| **Mesa de Dinero** | Laura Martínez | laura.martinez@flujo.com | mesa123 | Flujo de caja principal |## 📊 **Funcionalidades por Módulo**
 
 ### **🔄 Automatización TRM**
 ```bash
@@ -216,17 +255,21 @@ scripts/build/build-prod.bat  # Script Windows
 
 ## 🚦 **Estado del Proyecto**
 
-### ✅ **Completado (Producción Ready)**
+### ✅ **Completado (Desarrollo - Pruebas Locales)**
 - [x] Sistema TRM automático (programado 19:00 diario)
-- [x] Backend API REST completa
-- [x] Frontend React con TypeScript
-- [x] Sistema de autenticación JWT
-- [x] Dashboards por rol implementados
-- [x] Gestión de usuarios y auditoría
-- [x] Tabla de flujo con columnas fijas
-- [x] Integración TRM en tiempo real
-- [x] Scripts organizados y documentados
-- [x] Base de datos optimizada
+- [x] Backend API REST completa con FastAPI
+- [x] Frontend React con TypeScript + Vite
+- [x] Sistema de autenticación JWT con roles (Admin, Tesorería, Pagaduría, Mesa)
+- [x] Dashboards especializados por rol implementados
+- [x] Gestión completa de usuarios y auditoría
+- [x] Tabla de flujo de caja con columnas fijas optimizadas
+- [x] Integración TRM en tiempo real con múltiples fuentes
+- [x] Cálculo automático de GMF (4x1000) con persistencia
+- [x] Scripts organizados por funcionalidad y documentados
+- [x] Base de datos MySQL optimizada con índices
+- [x] Sistema de cargue masivo desde Excel
+- [x] Migración completada de MySQL (validada y funcional)
+- [x] Proyecto reorganizado con estructura profesional
 
 ### 🔄 **En Monitoreo**
 - Sistema TRM ejecutándose automáticamente
@@ -266,8 +309,9 @@ Para consultas técnicas o problemas:
 
 ---
 
-**Versión:** 1.0.0  
-**Última actualización:** Agosto 2025  
+**Versión:** 1.0.1  
+**Última actualización:** 2 de Diciembre de 2025  
+**Estado:** 🟢 Desarrollo - Pruebas Locales  
 **Autor:** Sistema de Flujo de Caja Bolívar  
 **Licencia:** Propietario - Bolívar  
 
@@ -283,4 +327,4 @@ Este sistema representa una **solución completa** para la gestión automatizada
 - 🚀 **Arquitectura escalable** con tecnologías modernas
 - 📱 **Interfaz responsive** optimizada para todos los dispositivos
 
-**Estado actual:** ✅ **PRODUCCIÓN READY** - Sistema configurado y funcionando automáticamente.
+**Estado actual:** 🟢 **DESARROLLO - PRUEBAS LOCALES** - Sistema completamente funcional en entorno de desarrollo, validado y listo para siguientes fases de testing y despliegue.

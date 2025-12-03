@@ -1,197 +1,329 @@
-import { useState, useMemo } from 'react';
-import { useCashFlow } from './useCashFlow';
+/**
+ * Hook para manejar conciliaciones contables
+ */
+import { useState, useCallback } from 'react';
+import { format } from 'date-fns';
 
-interface CompanyBalance {
-  company: string;
-  pagaduria: {
-    ingresos: number;
-    egresos: number;
-    saldo: number;
+export interface EmpresaConciliacion {
+  id: number;
+  compania_id: number;
+  compania: {
+    id: number;
+    nombre: string;
   };
-  tesoreria: {
-    ingresos: number;
-    egresos: number;
-    saldo: number;
-  };
-  total: number;
-  status: 'pendiente' | 'evaluado' | 'confirmado' | 'cerrado';
+  total_pagaduria: number;
+  total_tesoreria: number;
+  total_calculado: number;
+  total_centralizadora: number | null;
+  diferencia: number;
+  estado: string;
+  observaciones?: string;
 }
 
-interface ConciliationTotals {
-  pagaduriaIngresos: number;
-  pagaduriaEgresos: number;
-  tesoreriaIngresos: number;
-  tesoreriaEgresos: number;
-  total: number;
+export interface ConciliacionData {
+  fecha: string;
+  empresas: EmpresaConciliacion[];
 }
 
 export const useConciliacion = () => {
-  const { transactions } = useCashFlow();
-  
-  const [conciliationStatus, setConciliationStatus] = useState<{[key: string]: string}>({
-    'CAPITALIZADORA': 'pendiente',
-    'SEGUROS BOLÍVAR': 'evaluado',
-    'COMERCIALES': 'pendiente'
-  });
+  const [conciliacionData, setConciliacionData] = useState<ConciliacionData | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [fechaSeleccionada, setFechaSeleccionada] = useState<Date>(new Date());
 
-  // Calcular balances por compañía
-  const companyBalances = useMemo((): CompanyBalance[] => {
-    const companies = ['CAPITALIZADORA', 'SEGUROS BOLÍVAR', 'COMERCIALES'];
+  const obtenerConciliacionPorFecha = useCallback(async (fecha: Date) => {
+    setLoading(true);
+    setError(null);
     
-    return companies.map(company => {
-      // Filtrar transacciones por compañía
-      const companyTransactions = transactions.filter(t => 
-        t.description.toLowerCase().includes(company.toLowerCase()) ||
-        t.category.toLowerCase().includes(company.toLowerCase())
-      );
-
-      // Separar por módulo (simulado basado en categorías o descripción)
-      const pagaduriaTransactions = companyTransactions.filter(t => 
-        t.category.toLowerCase().includes('nómina') ||
-        t.category.toLowerCase().includes('payroll') ||
-        t.category.toLowerCase().includes('pagaduría') ||
-        t.description.toLowerCase().includes('nómina') ||
-        t.category.toLowerCase().includes('salarios') ||
-        t.category.toLowerCase().includes('personal')
-      );
-
-      const tesoreriaTransactions = companyTransactions.filter(t => 
-        !pagaduriaTransactions.includes(t)
-      );
-
-      // Calcular totales para Pagaduría
-      const pagaduriaIngresos = pagaduriaTransactions
-        .filter(t => t.type === 'income')
-        .reduce((sum, t) => sum + t.amount, 0);
+    try {
+      const fechaStr = format(fecha, 'yyyy-MM-dd');
       
-      const pagaduriaEgresos = pagaduriaTransactions
-        .filter(t => t.type === 'expense')
-        .reduce((sum, t) => sum + t.amount, 0);
+      const response = await fetch('http://localhost:8000/api/v1/conciliacion/fecha', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+        },
+        body: JSON.stringify({
+          fecha: fechaStr
+        })
+      });
 
-      // Calcular totales para Tesorería
-      const tesoreriaIngresos = tesoreriaTransactions
-        .filter(t => t.type === 'income')
-        .reduce((sum, t) => sum + t.amount, 0);
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          throw new Error('No tienes autorización para acceder a esta funcionalidad. Por favor inicia sesión.');
+        }
+        throw new Error(`Error ${response.status}: ${response.statusText}`);
+      }
+
+      const data: ConciliacionData = await response.json();
+      setConciliacionData(data);
+      setFechaSeleccionada(fecha);
       
-      const tesoreriaEgresos = tesoreriaTransactions
-        .filter(t => t.type === 'expense')
-        .reduce((sum, t) => sum + t.amount, 0);
+    } catch (err) {
+      console.error('Error obteniendo conciliación:', err);
+      setError(err instanceof Error ? err.message : 'Error desconocido');
+      setConciliacionData(null);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-      const pagaduriaSaldo = pagaduriaIngresos - pagaduriaEgresos;
-      const tesoreriaSaldo = tesoreriaIngresos - tesoreriaEgresos;
-      const total = pagaduriaSaldo + tesoreriaSaldo;
+  const actualizarTotalCentralizadora = useCallback(async (
+    empresaId: number, 
+    fecha: Date, 
+    totalCentralizadora: number,
+    observaciones?: string
+  ) => {
+    setLoading(true);
+    setError(null);
 
-      return {
-        company,
-        pagaduria: {
-          ingresos: pagaduriaIngresos,
-          egresos: pagaduriaEgresos,
-          saldo: pagaduriaSaldo
-        },
-        tesoreria: {
-          ingresos: tesoreriaIngresos,
-          egresos: tesoreriaEgresos,
-          saldo: tesoreriaSaldo
-        },
-        total,
-        status: conciliationStatus[company] as 'pendiente' | 'evaluado' | 'confirmado' | 'cerrado'
-      };
-    });
-  }, [transactions, conciliationStatus]);
-
-  // Función para calcular totales generales
-  const calculateTotals = (balances: CompanyBalance[]): ConciliationTotals => {
-    return balances.reduce((acc, balance) => {
-      acc.pagaduriaIngresos += balance.pagaduria.ingresos;
-      acc.pagaduriaEgresos += balance.pagaduria.egresos;
-      acc.tesoreriaIngresos += balance.tesoreria.ingresos;
-      acc.tesoreriaEgresos += balance.tesoreria.egresos;
-      acc.total += balance.total;
-      return acc;
-    }, {
-      pagaduriaIngresos: 0,
-      pagaduriaEgresos: 0,
-      tesoreriaIngresos: 0,
-      tesoreriaEgresos: 0,
-      total: 0
-    });
-  };
-
-  // Función para actualizar el estado de una compañía
-  const updateCompanyStatus = (company: string, newStatus: string) => {
-    setConciliationStatus(prev => ({
-      ...prev,
-      [company]: newStatus
-    }));
-  };
-
-  // Función para evaluar todas las compañías pendientes
-  const evaluarTodas = () => {
-    const newStatus = { ...conciliationStatus };
-    Object.keys(newStatus).forEach(company => {
-      if (newStatus[company] === 'pendiente') {
-        newStatus[company] = 'evaluado';
+    try {
+      const fechaStr = format(fecha, 'yyyy-MM-dd');
+      
+      const params = new URLSearchParams({
+        fecha: fechaStr,
+        total_centralizadora: totalCentralizadora.toString()
+      });
+      
+      if (observaciones) {
+        params.append('observaciones', observaciones);
       }
-    });
-    setConciliationStatus(newStatus);
-  };
 
-  // Función para confirmar todas las compañías evaluadas
-  const confirmarTodas = () => {
-    const newStatus = { ...conciliationStatus };
-    Object.keys(newStatus).forEach(company => {
-      if (newStatus[company] === 'evaluado') {
-        newStatus[company] = 'confirmado';
+      const response = await fetch(`http://localhost:8000/api/v1/conciliacion/centralizadora/${empresaId}?${params}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`Error ${response.status}: ${response.statusText}`);
       }
-    });
-    setConciliationStatus(newStatus);
-  };
 
-  // Función para cerrar todas las compañías confirmadas
-  const cerrarTodas = () => {
-    const newStatus = { ...conciliationStatus };
-    Object.keys(newStatus).forEach(company => {
-      if (newStatus[company] === 'confirmado') {
-        newStatus[company] = 'cerrado';
+      const result = await response.json();
+      
+      // Recargar datos después de actualizar
+      await obtenerConciliacionPorFecha(fecha);
+      
+      return result;
+      
+    } catch (err) {
+      console.error('Error actualizando total centralizadora:', err);
+      setError(err instanceof Error ? err.message : 'Error actualizando total centralizadora');
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, [obtenerConciliacionPorFecha]);
+
+  const confirmarConciliacion = useCallback(async (empresaId: number, fecha: Date) => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const fechaStr = format(fecha, 'yyyy-MM-dd');
+      
+      const params = new URLSearchParams({
+        fecha: fechaStr
+      });
+
+      const response = await fetch(`http://localhost:8000/api/v1/conciliacion/confirmar/${empresaId}?${params}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`Error ${response.status}: ${response.statusText}`);
       }
-    });
-    setConciliationStatus(newStatus);
-  };
 
-  // Función para obtener el siguiente estado en el flujo
-  const getNextStatus = (currentStatus: string): string | null => {
-    const statusFlow = ['pendiente', 'evaluado', 'confirmado', 'cerrado'];
-    const currentIndex = statusFlow.indexOf(currentStatus);
-    return currentIndex < statusFlow.length - 1 ? statusFlow[currentIndex + 1] : null;
-  };
+      const result = await response.json();
+      
+      // Recargar datos después de confirmar
+      await obtenerConciliacionPorFecha(fecha);
+      
+      return result;
+      
+    } catch (err) {
+      console.error('Error confirmando conciliación:', err);
+      setError(err instanceof Error ? err.message : 'Error confirmando conciliación');
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, [obtenerConciliacionPorFecha]);
 
-  // Función para obtener el estado anterior en el flujo
-  const getPreviousStatus = (currentStatus: string): string | null => {
-    const statusFlow = ['pendiente', 'evaluado', 'confirmado', 'cerrado'];
-    const currentIndex = statusFlow.indexOf(currentStatus);
-    return currentIndex > 0 ? statusFlow[currentIndex - 1] : null;
-  };
+  const evaluarConciliacion = useCallback(async (empresaId: number, fecha: Date) => {
+    setLoading(true);
+    setError(null);
 
-  // Función para verificar si se puede cambiar el estado
-  const canChangeStatus = (currentStatus: string, newStatus: string): boolean => {
-    const statusFlow = ['pendiente', 'evaluado', 'confirmado', 'cerrado'];
-    const currentIndex = statusFlow.indexOf(currentStatus);
-    const newIndex = statusFlow.indexOf(newStatus);
-    
-    // Solo permitir avanzar en el flujo o retroceder un paso
-    return newIndex === currentIndex + 1 || newIndex === currentIndex - 1;
-  };
+    try {
+      const fechaStr = format(fecha, 'yyyy-MM-dd');
+      
+      const params = new URLSearchParams({
+        fecha: fechaStr
+      });
+
+      const response = await fetch(`http://localhost:8000/api/v1/conciliacion/evaluar/${empresaId}?${params}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`Error ${response.status}: ${response.statusText}`);
+      }
+
+      const result = await response.json();
+      
+      // Recargar datos después de evaluar
+      await obtenerConciliacionPorFecha(fecha);
+      
+      return result;
+      
+    } catch (err) {
+      console.error('Error evaluando conciliación:', err);
+      setError(err instanceof Error ? err.message : 'Error evaluando conciliación');
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, [obtenerConciliacionPorFecha]);
+
+  const cerrarConciliacion = useCallback(async (empresaId: number, fecha: Date) => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const fechaStr = format(fecha, 'yyyy-MM-dd');
+      
+      const params = new URLSearchParams({
+        fecha: fechaStr
+      });
+
+      const response = await fetch(`http://localhost:8000/api/v1/conciliacion/cerrar/${empresaId}?${params}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`Error ${response.status}: ${response.statusText}`);
+      }
+
+      const result = await response.json();
+      
+      // Recargar datos después de cerrar
+      await obtenerConciliacionPorFecha(fecha);
+      
+      return result;
+      
+    } catch (err) {
+      console.error('Error cerrando conciliación:', err);
+      setError(err instanceof Error ? err.message : 'Error cerrando conciliación');
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, [obtenerConciliacionPorFecha]);
+
+  const evaluarTodasConciliaciones = useCallback(async (fecha: Date) => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const fechaStr = format(fecha, 'yyyy-MM-dd');
+      
+      const params = new URLSearchParams({
+        fecha: fechaStr
+      });
+
+      const response = await fetch(`http://localhost:8000/api/v1/conciliacion/evaluar-todas?${params}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`Error ${response.status}: ${response.statusText}`);
+      }
+
+      const result = await response.json();
+      
+      // Recargar datos después de evaluar
+      await obtenerConciliacionPorFecha(fecha);
+      
+      return result;
+      
+    } catch (err) {
+      console.error('Error evaluando conciliaciones:', err);
+      setError(err instanceof Error ? err.message : 'Error evaluando conciliaciones');
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, [obtenerConciliacionPorFecha]);
+
+  const cerrarTodasConciliaciones = useCallback(async (fecha: Date) => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const fechaStr = format(fecha, 'yyyy-MM-dd');
+      
+      const params = new URLSearchParams({
+        fecha: fechaStr
+      });
+
+      const response = await fetch(`http://localhost:8000/api/v1/conciliacion/cerrar-todas?${params}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`Error ${response.status}: ${response.statusText}`);
+      }
+
+      const result = await response.json();
+      
+      // Recargar datos después de cerrar
+      await obtenerConciliacionPorFecha(fecha);
+      
+      return result;
+      
+    } catch (err) {
+      console.error('Error cerrando conciliaciones:', err);
+      setError(err instanceof Error ? err.message : 'Error cerrando conciliaciones');
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, [obtenerConciliacionPorFecha]);
 
   return {
-    companyBalances,
-    conciliationStatus,
-    updateCompanyStatus,
-    calculateTotals,
-    evaluarTodas,
-    confirmarTodas,
-    cerrarTodas,
-    getNextStatus,
-    getPreviousStatus,
-    canChangeStatus
+    // Estado
+    conciliacionData,
+    loading,
+    error,
+    fechaSeleccionada,
+    
+    // Acciones
+    obtenerConciliacionPorFecha,
+    actualizarTotalCentralizadora,
+    evaluarConciliacion,
+    confirmarConciliacion,
+    cerrarConciliacion,
+    evaluarTodasConciliaciones,
+    cerrarTodasConciliaciones,
+    
+    // Helpers
+    setFechaSeleccionada
   };
 };

@@ -1,0 +1,73 @@
+version: '3.8'
+
+services:
+  # Base de datos PostgreSQL
+  db:
+    image: postgres:15-alpine
+    container_name: flujo_caja_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${DB_NAME:-flujo_caja_db}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - flujo_caja_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Backend FastAPI
+  backend:
+    build:
+      context: ./Back-FC
+      dockerfile: Dockerfile
+    container_name: flujo_caja_backend
+    restart: unless-stopped
+    env_file:
+      - ./Back-FC/.env
+    environment:
+      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@db:5432/${DB_NAME:-flujo_caja_db}
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./Back-FC/logs:/app/logs
+    networks:
+      - flujo_caja_network
+    command: >
+      sh -c "
+        echo 'Esperando base de datos...' &&
+        sleep 5 &&
+        alembic upgrade head &&
+        uvicorn app.main:app --host 0.0.0.0 --port 8000
+      "
+
+  # Frontend React
+  frontend:
+    build:
+      context: ./Front-FC
+      dockerfile: Dockerfile
+    container_name: flujo_caja_frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - flujo_caja_network
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  flujo_caja_network:
+    driver: bridge

@@ -2,20 +2,31 @@
 
 Este directorio contiene todos los scripts relacionados con la obtención, procesamiento y automatización de la TRM.
 
-## ⚠️ **IMPORTANTE: Problema de Backend Apagado**
+## 🎯 Sistema de TRM Automática - Configuración 7:00 PM
 
-**Si el backend está apagado a las 7 PM, NO se actualiza la TRM automáticamente.**
+### ✅ **Solución Completa Implementada:**
 
-### ✅ **Solución implementada:**
-- **Verificación automática**: Al iniciar el backend, revisa TRMs faltantes de los últimos 7 días
-- **Actualización manual**: Scripts para recuperar TRMs perdidas
-- **Recuperación automática**: Ya no necesitas recordar actualizar manualmente
+1. **Actualización Diaria Automática a las 7:00 PM (19:00)**
+   - Scheduler que se ejecuta todos los días a las 7:00 PM
+   - Obtiene la TRM del día automáticamente
+   - Registra en base de datos PostgreSQL
 
-## Archivos principales:
+2. **Recuperación Automática de TRMs Faltantes**
+   - Al iniciar el servidor, revisa últimos 30 días
+   - Detecta y recupera TRMs que faltaron cuando el servidor estaba apagado
+   - No requiere intervención manual
 
-### 🤖 **Automatización:**
-- `trm_scheduler_simple.py` - **Scheduler principal con verificación automática al inicio**
-- `trm_scheduler.py` - Scheduler original (desarrollo)
+3. **Monitoreo y Verificación**
+   - Verificación de conexión cada hora
+   - Logs detallados en `logs/trm_scheduler.log`
+   - Resumen de operaciones al iniciar servidor
+
+## 📁 Archivos principales:
+
+### 🤖 **Automatización (USAR ESTOS):**
+- `trm_scheduler_production.py` ⭐ **PRINCIPAL - Ejecuta a las 7:00 PM**
+- `start_trm_scheduler.ps1` - Script de PowerShell para iniciar el scheduler
+- `update_missing_trm.py` - Script manual para recuperar TRMs faltantes
 
 ### 📊 **Obtención de datos:**
 - `trm_scraper.py` - Script principal que obtiene TRM desde fuentes oficiales
