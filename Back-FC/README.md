@@ -14,15 +14,27 @@ Back-FC/
 │   └── services/          # Lógica de negocio
 ├── tests/                 # 🧪 Tests organizados
 │   ├── unit/             # Tests unitarios
-│   └── integration/      # Tests de integración
+│   ├── integration/      # Tests de integración
+│   ├── test_gmf_*.py     # Tests de GMF
+│   ├── test_trm_*.py     # Tests de TRM
+│   └── test_*.py         # Tests diversos
 ├── scripts/              # 🛠️ Scripts organizados
-│   ├── dev/              # Desarrollo y debug
 │   ├── setup/            # Configuración inicial
-│   ├── maintenance/      # Mantenimiento
-│   └── migration/        # Migraciones
+│   ├── maintenance/      # Mantenimiento y correcciones
+│   ├── trm/              # Sistema TRM
+│   ├── utils/            # Utilidades generales
+│   ├── migration/        # Migraciones de DB
+│   ├── debug/            # Scripts de debugging
+│   └── tests/            # Scripts de prueba
 ├── tools/                # 🔧 Herramientas de verificación
+│   ├── check_*.py        # Scripts de verificación
+│   ├── debug_*.py        # Scripts de debug
+│   └── README.md         # Documentación de herramientas
 ├── docs/                 # 📚 Documentación
-├── logs/                 # 📋 Archivos de log
+│   ├── TRM_SYSTEM_DOCUMENTATION.md
+│   ├── MIGRACION_POSTGRESQL.md
+│   └── *.md              # Documentos técnicos
+├── logs/                 # 📋 Archivos de log (no versionados)
 └── docker/               # 🐳 Configuración Docker
 ```
 
@@ -74,7 +86,30 @@ pytest --cov=app tests/
 ## 📝 Notas de Uso
 
 - **Desarrollo diario:** Usar solo archivos en `/app/` y `run_server.py`
-- **Testing:** Scripts disponibles en `/scripts/tests/`
-- **Debug:** Herramientas en `/scripts/debug/`
-- **Mantenimiento:** Scripts en `/scripts/maintenance/`
+- **Testing:** Tests en `/tests/` - Ejecutar con `pytest`
+- **Scripts:**
+  - `/scripts/setup/` - Configuración inicial del sistema
+  - `/scripts/maintenance/` - Tareas de mantenimiento
+  - `/scripts/trm/` - Sistema TRM automático
+  - `/scripts/utils/` - Utilidades diversas
+- **Tools:** Scripts de verificación en `/tools/`
 - **Consulta histórica:** Código archivado en `/scripts/archive/`
+
+## 🗂️ Organización de Archivos
+
+### ✅ **Lo que DEBE estar en cada carpeta:**
+
+- **`/app/`**: Solo código de producción de la aplicación
+- **`/tests/`**: Todos los archivos `test_*.py`
+- **`/scripts/`**: Scripts organizados por categoría
+- **`/tools/`**: Scripts de verificación (`check_*.py`, `debug_*.py`)
+- **`/docs/`**: Toda la documentación markdown
+- **`/logs/`**: Archivos de log (no versionados)
+
+### ❌ **Lo que NO debe estar en la raíz:**
+
+- Archivos `test_*.py` → Mover a `/tests/`
+- Archivos `check_*.py` → Mover a `/tools/`
+- Archivos `debug_*.py` → Mover a `/tools/`
+- Archivos `.md` (excepto README.md) → Mover a `/docs/`
+- Archivos `.log` → Eliminados (no versionados)

@@ -5,6 +5,58 @@ Registro de todos los cambios notables del Sistema de Flujo de Caja de Bolívar.
 El formato está basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/),
 y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] - 2025-12-02
+
+### 🧹 Reorganización del Proyecto
+
+#### ♻️ Reorganizado
+- **Estructura de archivos Backend**
+  - Movidos archivos `check_*.py` desde `Back-FC/` raíz a `Back-FC/tools/`
+  - Movidos archivos `test_*.py` desde `Back-FC/` raíz a `Back-FC/tests/`
+  - Movido `debug_cuentas_excel.py` a `Back-FC/tools/`
+  - Movido `limpiar_septiembre.py` a `Back-FC/scripts/maintenance/`
+  - Movidos documentos `.md` desde `Back-FC/` raíz a `Back-FC/docs/`
+    - `MIGRACION_COMPLETADA.md`
+    - `MIGRACION_POSTGRESQL.md`
+    - `TRM_SYSTEM_DOCUMENTATION.md`
+
+- **Estructura de archivos raíz**
+  - Movido `SOLUCION_GMF_AUTOCAL CULO.md` a `docs/SOLUCION_GMF_AUTOCALCULO.md`
+  - Eliminado espacio en nombre de archivo
+
+- **Carpeta Excel**
+  - Agregado `README.md` con documentación de uso
+  - Documentado propósito y formato de archivos
+
+#### 🗑️ Eliminado
+- `Back-FC/trm_scraper.log` - Archivo de log que no debería estar versionado
+- `Front-FC/debug_sync.html` - Archivo de debug temporal
+
+#### 📝 Actualizado
+- **Documentación**
+  - `README.md` - Estructura actualizada del proyecto
+  - `Back-FC/README.md` - Organización de carpetas backend
+  - `docs/PROJECT_STRUCTURE.md` - Documentación completa de estructura
+  - `Excel/README.md` - Documentación nueva
+
+- **Configuración**
+  - `.gitignore` - Reglas preventivas agregadas:
+    - Excluir archivos Excel de cargue (excepto plantillas)
+    - Prevenir archivos `debug_*.html/js/py`
+    - Prevenir archivos `check_*.py` en raíz de Back-FC
+    - Prevenir archivos `test_*.py` en raíz de Back-FC
+    - Prevenir archivos `.md` en raíz de Back-FC (excepto README.md)
+    - Prevenir archivos `.log` en raíz
+
+#### ✅ Resultado
+- Proyecto completamente reorganizado y limpio
+- Estructura coherente y predecible
+- Documentación actualizada
+- Funcionalidad intacta (sin cambios en código de producción)
+- Reglas preventivas para mantener organización
+
+---
+
 ## [1.0.0] - 2025-08-20
 
 ### 🎉 Lanzamiento Inicial
