@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Building2, Download, RefreshCw, AlertCircle } from 'lucide-react';
+import { Building2, Download, RefreshCw, AlertCircle, Settings, Check, X } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { formatCurrency } from '../../utils/formatters';
 import { formatDateString } from '../../utils/dateUtils';
@@ -13,6 +13,7 @@ import DatePicker from '../Calendar/DatePicker';
 import { useDashboardWebSocket } from '../../hooks/useWebSocket';
 import { CeldaEditable } from '../UI/CeldaEditable';
 import { FiltrosDashboard } from '../Dashboard/FiltrosDashboard';
+import { ErrorBoundary } from '../UI/ErrorBoundary';
 
 interface Concepto {
   codigo: string;
@@ -36,7 +37,11 @@ interface BankAccount {
   };
 }
 
-const DashboardPagaduria: React.FC = () => {
+interface DashboardPagaduriaProps {
+  readOnly?: boolean;
+}
+
+const DashboardPagaduria: React.FC<DashboardPagaduriaProps> = ({ readOnly = false }) => {
   const { user } = useAuth();
   // Obtener la fecha actual en formato YYYY-MM-DD
   const getCurrentDate = () => {
@@ -48,12 +53,25 @@ const DashboardPagaduria: React.FC = () => {
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [loading, setLoading] = useState(true);
   
-  // Estado para multi-moneda
-  const [usarMultiMoneda, setUsarMultiMoneda] = useState<boolean>(false);
+  // Estado para multi-moneda - SIEMPRE activado
+  const [usarMultiMoneda, setUsarMultiMoneda] = useState<boolean>(true);
   
   // Estados para filtros
   const [companiasFiltradas, setCompaniasFiltradas] = useState<number[]>([]);
   const [bancosFiltrados, setBancosFiltrados] = useState<number[]>([]);
+  
+  // Estados para Cuatro por Mil (similar a GMF en Tesorería)
+  const [cuatroPorMilConfig, setCuatroPorMilConfig] = useState<Map<number, number[]>>(new Map());
+  const [cuatroPorMilModalOpen, setCuatroPorMilModalOpen] = useState(false);
+  const [currentCuatroPorMilAccount, setCurrentCuatroPorMilAccount] = useState<number | null>(null);
+  const [loadingCuatroPorMilConfig, setLoadingCuatroPorMilConfig] = useState(false);
+  // Lista fija de conceptos permitidos para Cuatro por Mil
+  const CONCEPTOS_CUATRO_POR_MIL_PERMITIDOS: number[] = [
+    68,  // EMBARGOS
+    69,  // OTROS PAGOS
+    76,  // PAGO SOI
+    78,  // OTROS IMPTOS
+  ];
   
   // Hook para obtener TRM de la fecha seleccionada
   const { trm, loading: trmLoading, error: trmError, refetch: refetchTRM } = useTRMByDate(selectedDate);
@@ -91,15 +109,9 @@ const DashboardPagaduria: React.FC = () => {
       return monto;
     }
     
-    // Si la cuenta es USD, convertir de COP a USD
-    if (tipoMonedaCuenta === 'USD') {
-      const convertido = Math.floor((monto / trm.valor) * 100) / 100; // Truncar a 2 decimales (no redondear)
-      console.log(`💱 Converting ${monto} COP to ${convertido} USD (TRM: ${trm.valor})`);
-      return convertido;
-    }
-    
-    // Si la cuenta es COP, mantener el monto original
-    console.log(`✅ Keeping COP value: ${monto}`);
+    // Los valores ya están guardados en su moneda nativa (USD para cuentas USD, COP para cuentas COP)
+    // No necesitan conversión para mostrar en la misma moneda
+    console.log(`✅ Returning native value: ${monto} ${tipoMonedaCuenta}`);
     return monto;
   };
 
@@ -142,6 +154,163 @@ const DashboardPagaduria: React.FC = () => {
     setCompaniasFiltradas([]);
     setBancosFiltrados([]);
   };
+
+  // ==================== FUNCIONES CUATRO POR MIL ====================
+  
+  // Cargar configuración de Cuatro por Mil desde el backend
+  const cargarConfiguracionCuatroPorMil = async () => {
+    if (!user || (user.role !== 'administrador' && user.role !== 'pagaduria')) return;
+    
+    setLoadingCuatroPorMilConfig(true);
+    try {
+      const token = localStorage.getItem('access_token');
+      
+      // Cargar configuraciones vigentes para la fecha seleccionada
+      const configMap = new Map<number, number[]>();
+      
+      for (const account of bankAccounts) {
+        // Pasar fecha como parámetro para obtener config vigente para ese día
+        const response = await fetch(`http://localhost:8000/api/v1/cuatro-por-mil/config/${account.id}?fecha=${selectedDate}`, {
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token && { Authorization: `Bearer ${token}` })
+          }
+        });
+        
+        if (response.ok) {
+          const config = await response.json();
+          if (config.conceptos_seleccionados && config.conceptos_seleccionados.length > 0) {
+            // Asegurar que siempre sean números (IDs)
+            const ids = config.conceptos_seleccionados.map((item: any) => {
+              if (typeof item === 'object' && item.id) return Number(item.id);
+              return Number(item);
+            }).filter((id: number) => !isNaN(id) && CONCEPTOS_CUATRO_POR_MIL_PERMITIDOS.includes(id));
+            // Si queda vacío tras filtrado, usar todos permitidos
+            configMap.set(account.id, ids.length ? ids : [...CONCEPTOS_CUATRO_POR_MIL_PERMITIDOS]);
+          } else {
+            // Si no hay configuración, usar todos los permitidos por defecto
+            configMap.set(account.id, [...CONCEPTOS_CUATRO_POR_MIL_PERMITIDOS]);
+          }
+        }
+      }
+      
+      setCuatroPorMilConfig(configMap);
+    } catch (error) {
+      console.error('Error cargando configuración Cuatro por Mil:', error);
+    } finally {
+      setLoadingCuatroPorMilConfig(false);
+    }
+  };
+
+  // Guardar configuración de Cuatro por Mil
+  const guardarConfiguracionCuatroPorMil = async (cuentaId: number, conceptos: number[]) => {
+    if (!user || (user.role !== 'administrador' && user.role !== 'pagaduria')) return;
+    
+    try {
+      const token = localStorage.getItem('access_token');
+      const response = await fetch('http://localhost:8000/api/v1/cuatro-por-mil/config', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token && { Authorization: `Bearer ${token}` })
+        },
+        body: JSON.stringify({
+          cuenta_bancaria_id: cuentaId,
+          conceptos_seleccionados: conceptos,
+          fecha_vigencia_desde: selectedDate
+        })
+      });
+      
+      if (response.ok) {
+        // Actualizar configuración local
+        const nuevaConfig = new Map(cuatroPorMilConfig);
+        nuevaConfig.set(cuentaId, conceptos);
+        setCuatroPorMilConfig(nuevaConfig);
+      }
+    } catch (error) {
+      console.error('Error guardando configuración Cuatro por Mil:', error);
+    }
+  };
+
+  // Abrir modal de configuración Cuatro por Mil
+  const abrirModalCuatroPorMil = (cuentaId: number) => {
+    if (!user || (user.role !== 'administrador' && user.role !== 'pagaduria')) return;
+    
+    setCurrentCuatroPorMilAccount(cuentaId);
+    
+    // Si no hay configuración, asignar todos los permitidos por defecto
+    if (!cuatroPorMilConfig.has(cuentaId)) {
+      const nuevaConfig = new Map(cuatroPorMilConfig);
+      nuevaConfig.set(cuentaId, [...CONCEPTOS_CUATRO_POR_MIL_PERMITIDOS]);
+      setCuatroPorMilConfig(nuevaConfig);
+    }
+    
+    setCuatroPorMilModalOpen(true);
+  };
+
+  // Cerrar modal de configuración Cuatro por Mil
+  const cerrarModalCuatroPorMil = () => {
+    setCurrentCuatroPorMilAccount(null);
+    setCuatroPorMilModalOpen(false);
+  };
+
+  // Guardar y recalcular Cuatro por Mil
+  const guardarConceptosCuatroPorMil = async (cuentaId: number) => {
+    if (!cuentaId) return;
+    
+    const conceptos = cuatroPorMilConfig.get(cuentaId) || [];
+    console.log('🔧 [Cuatro por Mil] Guardando conceptos para cuenta:', cuentaId, 'Conceptos:', conceptos, 'Fecha:', selectedDate);
+    
+    // Guardar configuración y esperar respuesta
+    await guardarConfiguracionCuatroPorMil(cuentaId, conceptos);
+    console.log('✅ [Cuatro por Mil] Configuración guardada');
+    
+    // Forzar recálculo en backend
+    try {
+      const token = localStorage.getItem('access_token');
+      console.log('🔄 [Cuatro por Mil] Iniciando recálculo para fecha:', selectedDate, 'cuenta:', cuentaId);
+      
+      const response = await fetch('http://localhost:8000/api/v1/cuatro-por-mil/recalculate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token && { Authorization: `Bearer ${token}` })
+        },
+        body: JSON.stringify({
+          fecha: selectedDate,
+          cuenta_bancaria_id: cuentaId
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Error en recálculo: ${response.status} ${response.statusText}`);
+      }
+      
+      const result = await response.json();
+      console.log('✅ [Cuatro por Mil] Recálculo completado:', result);
+      
+      // Esperar 1 segundo para asegurar que el backend persistió completamente
+      console.log('⏱️ [Cuatro por Mil] Esperando 1 segundo antes de recargar...');
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Recargar configuración
+      await cargarConfiguracionCuatroPorMil();
+      console.log('✅ [Cuatro por Mil] Configuración recargada');
+      
+      // Recargar transacciones
+      console.log('🔄 [Cuatro por Mil] Recargando transacciones...');
+      await cargarTransacciones();
+      
+      console.log('✅ [Cuatro por Mil] Transacciones recargadas');
+    } catch (error) {
+      console.error('❌ [Cuatro por Mil] Error forzando recálculo:', error);
+      alert('Error al recalcular Cuatro por Mil. Por favor, recarga la página.');
+    }
+    
+    cerrarModalCuatroPorMil();
+  };
+
+  // ==================== FIN FUNCIONES CUATRO POR MIL ====================
 
   // Función helper para validar y limpiar valores numéricos
   const safeNumericValue = (value: any): number => {
@@ -295,13 +464,24 @@ const DashboardPagaduria: React.FC = () => {
     if (concepto.id) {
       // Obtener IDs de cuentas filtradas para calcular solo sus totales
       const cuentasFiltradas = obtenerCuentasFiltradas();
-      const idsConCuentasFiltradas = cuentasFiltradas.map(c => c.id);
+      const idsConCuentasFiltradas = cuentasFiltradas.map(c => Number(c.id));
       
-      // Sumar solo las transacciones de este concepto que pertenezcan a cuentas filtradas
-      const transaccionesConcepto = transacciones.filter(t => 
-        t.concepto_id === concepto.id && t.cuenta_id !== null && idsConCuentasFiltradas.includes(t.cuenta_id)
-      );
-      total = transaccionesConcepto.reduce((sum, t) => sum + t.monto, 0);
+      // Sumar todas las transacciones de este concepto
+      // Si hay filtros aplicados, solo sumar las de cuentas filtradas
+      // Si no hay filtros, sumar TODAS las transacciones del concepto
+      const transaccionesConcepto = transacciones.filter(t => {
+        if (t.concepto_id !== concepto.id) return false;
+        
+        // Si hay filtros de compañía o banco, aplicar el filtro de cuentas
+        if (companiasFiltradas.length > 0 || bancosFiltrados.length > 0) {
+          return t.cuenta_id !== null && idsConCuentasFiltradas.includes(Number(t.cuenta_id));
+        }
+        
+        // Si no hay filtros, incluir todas las transacciones del concepto
+        return true;
+      });
+      
+      total = transaccionesConcepto.reduce((sum, t) => sum + (Number(t.monto) || 0), 0);
     }
     
     return total;
@@ -334,9 +514,11 @@ const DashboardPagaduria: React.FC = () => {
         ...cuenta,
         cuenta_moneda_id: `${cuenta.id}_${cuenta.monedas[0] || 'COP'}`,
         moneda_display: cuenta.monedas[0] || 'COP',
-        tipo_moneda: cuenta.monedas[0] || 'COP', // Agregar tipo_moneda para compatibilidad
+        tipo_moneda: cuenta.monedas[0] || 'COP',
         nombre_con_moneda: `${cuenta.banco.nombre} ${cuenta.numero_cuenta.slice(-4)}`,
-        es_expansion: false
+        es_expansion: false,
+        es_cop_autocalculado: false,
+        cuenta_usd_par_id: null
       }));
     }
 
@@ -344,15 +526,35 @@ const DashboardPagaduria: React.FC = () => {
     
     cuentas.forEach(cuenta => {
       const monedas = cuenta.monedas && cuenta.monedas.length > 0 ? cuenta.monedas : ['COP'];
+      const tieneUSD = monedas.includes('USD');
+      const tieneCOP = monedas.includes('COP');
+      const esMultiMoneda = tieneUSD && tieneCOP;
       
-      monedas.forEach((moneda, index) => {
+      // Ordenar monedas: USD primero (editable), luego COP (calculado)
+      const monedasOrdenadas = [...monedas].sort((a, b) => {
+        if (a === 'USD' && b === 'COP') return -1;
+        if (a === 'COP' && b === 'USD') return 1;
+        return 0;
+      });
+      
+      let cuentaUsdId: number | null = null;
+      
+      monedasOrdenadas.forEach((moneda, index) => {
+        const esCopAutocalculado = esMultiMoneda && moneda === 'COP';
+        
+        if (esMultiMoneda && moneda === 'USD') {
+          cuentaUsdId = cuenta.id;
+        }
+        
         const cuentaExpandida = {
           ...cuenta,
           cuenta_moneda_id: `${cuenta.id}_${moneda}`,
           moneda_display: moneda,
-          tipo_moneda: moneda, // Agregar tipo_moneda para compatibilidad
+          tipo_moneda: moneda,
           nombre_con_moneda: `${cuenta.banco.nombre} ${cuenta.numero_cuenta.slice(-4)} (${moneda})`,
-          es_expansion: index > 0 // Marcar si es una expansión de moneda adicional
+          es_expansion: index > 0,
+          es_cop_autocalculado: esCopAutocalculado,
+          cuenta_usd_par_id: esCopAutocalculado ? cuentaUsdId : null
         };
         console.log(`📊 Cuenta expandida:`, cuentaExpandida);
         cuentasExpandidas.push(cuentaExpandida);
@@ -429,6 +631,13 @@ const DashboardPagaduria: React.FC = () => {
 
     loadAllBankAccounts();
   }, []);
+
+  // Cargar configuración de Cuatro por Mil cuando las cuentas están listas
+  useEffect(() => {
+    if (bankAccounts.length > 0 && user && (user.role === 'administrador' || user.role === 'pagaduria')) {
+      cargarConfiguracionCuatroPorMil();
+    }
+  }, [bankAccounts, selectedDate, user]);
 
   // Ejecutar procesamiento automático de diferencias saldos cuando cambien las transacciones
   useEffect(() => {
@@ -602,33 +811,19 @@ const DashboardPagaduria: React.FC = () => {
             )}
           </div>
           
-          {/* Toggle Multi-Moneda */}
-          <div className="flex items-center space-x-2">
-            <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-              Multi-Moneda
-            </label>
-            <button
-              onClick={() => setUsarMultiMoneda(!usarMultiMoneda)}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                usarMultiMoneda ? 'bg-green-600' : 'bg-gray-200 dark:bg-gray-700'
-              }`}
-            >
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                  usarMultiMoneda ? 'translate-x-6' : 'translate-x-1'
-                }`}
-              />
-            </button>
-          </div>
-          
-          <button className="flex items-center space-x-2 px-3 py-2 bg-bolivar-600 text-white rounded-lg hover:bg-bolivar-700 transition-colors text-sm">
-            <RefreshCw className="h-4 w-4" />
-            <span>Actualizar</span>
-          </button>
-          <button className="flex items-center space-x-2 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm">
-            <Download className="h-4 w-4" />
-            <span>Exportar</span>
-          </button>
+
+          {!readOnly && (
+            <>
+              <button className="flex items-center space-x-2 px-3 py-2 bg-bolivar-600 text-white rounded-lg hover:bg-bolivar-700 transition-colors text-sm">
+                <RefreshCw className="h-4 w-4" />
+                <span>Actualizar</span>
+              </button>
+              <button className="flex items-center space-x-2 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm">
+                <Download className="h-4 w-4" />
+                <span>Exportar</span>
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -698,13 +893,11 @@ const DashboardPagaduria: React.FC = () => {
                   <th key={account.cuenta_moneda_id} className="bg-gray-100 dark:bg-gray-700 border border-gray-400 dark:border-gray-500 px-1 py-1 text-gray-700 dark:text-gray-300 font-medium text-center text-xs">
                     <div className="flex flex-col">
                       <span>{account.numero_cuenta}</span>
-                      {usarMultiMoneda && (
-                        <span className={`px-1 py-0.5 rounded text-xs font-bold ${
-                          account.moneda_display === 'USD' ? 'bg-green-200 text-green-800' : 'bg-yellow-200 text-yellow-800'
-                        }`}>
-                          {account.moneda_display}
-                        </span>
-                      )}
+                      <span className={`px-1 py-0.5 rounded text-xs font-bold ${
+                        account.moneda_display === 'USD' ? 'bg-green-200 text-green-800' : 'bg-yellow-200 text-yellow-800'
+                      }`}>
+                        {account.moneda_display}
+                      </span>
                     </div>
                   </th>
                 ))}
@@ -789,10 +982,40 @@ const DashboardPagaduria: React.FC = () => {
                   {cuentasExpandidas.map((account) => (
                     <td
                       key={`data-${account.cuenta_moneda_id}`}
-                      className="border border-gray-400 dark:border-gray-500 px-1 py-1 text-center text-xs h-8 min-h-[32px]"
+                      className={`border border-gray-400 dark:border-gray-500 px-1 py-1 text-center text-xs h-8 min-h-[32px] ${concepto.nombre === 'CUATRO POR MIL' ? 'bg-orange-50 dark:bg-orange-900/20' : ''}`}
                     >
-                      {/* Si es DIFERENCIA SALDOS, mostrar valor desde base de datos */}
-                      {concepto.nombre === 'DIFERENCIA SALDOS' ? (
+                      {/* Si es CUATRO POR MIL, mostrar valor desde BD + botón de configuración */}
+                      {concepto.nombre === 'CUATRO POR MIL' ? (
+                        (() => {
+                          const valorCuatroPorMilPersistido = concepto.id ? obtenerMonto(concepto.id, account.id) : 0;
+                          const valorSeguro = safeNumericValue(valorCuatroPorMilPersistido);
+                          
+                          return (
+                            <div className="flex items-center justify-between">
+                              <div className="flex-1 text-center">
+                                {valorSeguro !== 0 ? (
+                                  <span className={`font-medium ${valorSeguro < 0 ? 'text-red-700 dark:text-red-400' : 'text-green-700 dark:text-green-400'}`}>
+                                    {valorSeguro < 0 ? `(${formatCurrency(Math.abs(valorSeguro))})` : formatCurrency(valorSeguro)}
+                                  </span>
+                                ) : (
+                                  <span className="text-gray-400 dark:text-gray-500">—</span>
+                                )}
+                              </div>
+                              
+                              {/* Ícono de configuración - Alineado a la derecha */}
+                              {!readOnly && (user?.role === 'administrador' || user?.role === 'pagaduria') && (
+                                <button
+                                  onClick={() => abrirModalCuatroPorMil(account.id)}
+                                  className="p-1 text-orange-600 hover:text-orange-800 dark:text-orange-400 dark:hover:text-orange-200 transition-colors hover:bg-orange-100 dark:hover:bg-orange-900/20 rounded"
+                                  title="Configurar conceptos Cuatro por Mil"
+                                >
+                                  <Settings className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })()
+                      ) : concepto.nombre === 'DIFERENCIA SALDOS' ? (
                         <div className="h-full flex items-center justify-center">
                           {(() => {
                             console.log(`🔍 Mostrando DIFERENCIA SALDOS para cuenta ${account.cuenta_moneda_id} (${account.numero_cuenta})`);
@@ -813,15 +1036,29 @@ const DashboardPagaduria: React.FC = () => {
                             );
                           })()}
                         </div>
+                      ) : account.es_cop_autocalculado && account.cuenta_usd_par_id && trm ? (
+                        // Celda COP auto-calculada desde USD × TRM / 1000 (BLOQUEADA)
+                        (() => {
+                          const valorUSD = obtenerMontoConConversion(concepto.id || 0, account.cuenta_usd_par_id, 'USD');
+                          const valorCOPCalculado = (valorUSD * trm.valor) / 1000;
+                          
+                          return valorCOPCalculado !== 0 ? (
+                            <span className={`font-medium ${valorCOPCalculado < 0 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'}`} title="Valor auto-calculado desde USD × TRM">
+                              {valorCOPCalculado < 0 ? `(${formatCurrency(Math.abs(valorCOPCalculado))})` : formatCurrency(valorCOPCalculado)}
+                            </span>
+                          ) : (
+                            <span className="text-gray-400 dark:text-gray-500">—</span>
+                          );
+                        })()
                       ) : (
                         <CeldaEditable
                           conceptoId={concepto.id || 0}
                           cuentaId={account.id}
                           valor={obtenerMontoConConversion(concepto.id || 0, account.id, account.tipo_moneda)}
                           currency={account.tipo_moneda}
-                          onGuardar={guardarTransaccionConSignos} // 🔧 Usar función con lógica de signos
+                          onGuardar={guardarTransaccionConSignos}
                           companiaId={account.compania?.id}
-                          disabled={isConceptoAutoCalculado(concepto.id)} // 🚫 Deshabilitar conceptos auto-calculados
+                          disabled={readOnly || isConceptoAutoCalculado(concepto.id)}
                         />
                       )}
                     </td>
@@ -945,8 +1182,130 @@ const DashboardPagaduria: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Modal de configuración Cuatro por Mil */}
+      {cuatroPorMilModalOpen && currentCuatroPorMilAccount && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full m-4">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                  Configurar Conceptos Cuatro por Mil
+                </h3>
+                <button
+                  onClick={cerrarModalCuatroPorMil}
+                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+
+              <div className="mb-4">
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+                  Selecciona los conceptos que se incluirán en el cálculo del Cuatro por Mil para esta cuenta:
+                </p>
+                
+                {loadingCuatroPorMilConfig ? (
+                  <div className="flex items-center justify-center py-8">
+                    <RefreshCw className="w-6 h-6 animate-spin text-gray-400" />
+                    <span className="ml-2 text-gray-600 dark:text-gray-400">Cargando configuración...</span>
+                  </div>
+                ) : (
+                  <div>
+                    <div className="flex justify-between items-center mb-2 text-xs text-gray-600 dark:text-gray-400">
+                      <span>Seleccionados: {cuatroPorMilConfig.get(currentCuatroPorMilAccount)?.length || 0} / {CONCEPTOS_CUATRO_POR_MIL_PERMITIDOS.length}</span>
+                      <div className="space-x-2">
+                        <button
+                          onClick={() => {
+                            const nuevaConfig = new Map(cuatroPorMilConfig);
+                            nuevaConfig.set(currentCuatroPorMilAccount, [...CONCEPTOS_CUATRO_POR_MIL_PERMITIDOS]);
+                            setCuatroPorMilConfig(nuevaConfig);
+                          }}
+                          className="px-2 py-1 border rounded text-xs hover:bg-gray-50 dark:hover:bg-gray-700"
+                        >Todos</button>
+                        <button
+                          onClick={() => {
+                            const nuevaConfig = new Map(cuatroPorMilConfig);
+                            nuevaConfig.set(currentCuatroPorMilAccount, []);
+                            setCuatroPorMilConfig(nuevaConfig);
+                          }}
+                          className="px-2 py-1 border rounded text-xs hover:bg-gray-50 dark:hover:bg-gray-700"
+                        >Limpiar</button>
+                      </div>
+                    </div>
+                    <div className="max-h-64 overflow-y-auto border rounded-md p-3 space-y-2">
+                      {conceptos
+                        .filter(concepto => CONCEPTOS_CUATRO_POR_MIL_PERMITIDOS.includes(concepto.id || 0))
+                        .map((concepto) => {
+                          const isSelected = cuatroPorMilConfig.get(currentCuatroPorMilAccount)?.includes(concepto.id || 0) || false;
+                          return (
+                            <label key={concepto.id} className="flex items-center space-x-2 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={(e) => {
+                                  const conceptosActuales = cuatroPorMilConfig.get(currentCuatroPorMilAccount) || [];
+                                  let nuevosConceptos;
+                                  if (e.target.checked) {
+                                    nuevosConceptos = [...conceptosActuales, concepto.id || 0];
+                                  } else {
+                                    nuevosConceptos = conceptosActuales.filter(id => id !== concepto.id);
+                                  }
+                                  const nuevaConfig = new Map(cuatroPorMilConfig);
+                                  nuevaConfig.set(currentCuatroPorMilAccount, nuevosConceptos);
+                                  setCuatroPorMilConfig(nuevaConfig);
+                                }}
+                                className="w-4 h-4 text-orange-600 border-gray-300 rounded focus:ring-orange-500"
+                              />
+                              <span className="text-sm text-gray-700 dark:text-gray-300">{concepto.nombre}</span>
+                            </label>
+                          );
+                        })}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex justify-end space-x-3">
+                <button
+                  onClick={cerrarModalCuatroPorMil}
+                  className="px-4 py-2 text-gray-600 dark:text-gray-400 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={() => guardarConceptosCuatroPorMil(currentCuatroPorMilAccount)}
+                  disabled={loadingCuatroPorMilConfig}
+                  className="px-4 py-2 bg-orange-600 text-white rounded-md hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center"
+                >
+                  {loadingCuatroPorMilConfig ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                      Guardando...
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-4 h-4 mr-2" />
+                      Guardar
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
 
-export default DashboardPagaduria;
+// Componente wrapper con ErrorBoundary
+const DashboardPagaduriaWithErrorBoundary: React.FC<DashboardPagaduriaProps> = ({ readOnly = false }) => {
+  return (
+    <ErrorBoundary>
+      <DashboardPagaduria readOnly={readOnly} />
+    </ErrorBoundary>
+  );
+};
+
+export default DashboardPagaduriaWithErrorBoundary;

@@ -62,7 +62,11 @@ interface GMFModalProps {
   onSave: (conceptos: number[]) => void;
 }
 
-const DashboardTesoreria: React.FC = () => {
+interface DashboardTesoreriaProps {
+  readOnly?: boolean;
+}
+
+const DashboardTesoreria: React.FC<DashboardTesoreriaProps> = ({ readOnly = false }) => {
   const { user } = useAuth();
   // Obtener la fecha actual en formato YYYY-MM-DD
   const getCurrentDate = () => {
@@ -113,8 +117,8 @@ const DashboardTesoreria: React.FC = () => {
     46, // IMPUESTOS
   ];
   
-  // Estado para multi-moneda
-  const [usarMultiMoneda, setUsarMultiMoneda] = useState<boolean>(false);
+  // Estado para multi-moneda - SIEMPRE activado
+  const [usarMultiMoneda, setUsarMultiMoneda] = useState<boolean>(true);
   
   // Estados para filtros
   const [companiasFiltradas, setCompaniasFiltradas] = useState<number[]>([]);
@@ -153,15 +157,9 @@ const DashboardTesoreria: React.FC = () => {
       return monto;
     }
     
-    // Si la cuenta es USD, convertir de COP a USD
-    if (tipoMonedaCuenta === 'USD') {
-      const convertido = Math.floor((monto / trm.valor) * 100) / 100; // Truncar a 2 decimales (no redondear)
-      console.log(`💱 Converting ${monto} COP to ${convertido} USD (TRM: ${trm.valor})`);
-      return convertido;
-    }
-    
-    // Si la cuenta es COP, mantener el monto original
-    console.log(`✅ Keeping COP value: ${monto}`);
+    // Los valores ya están guardados en su moneda nativa (USD para cuentas USD, COP para cuentas COP)
+    // No necesitan conversión para mostrar en la misma moneda
+    console.log(`✅ Returning native value: ${monto} ${tipoMonedaCuenta}`);
     return monto;
   };
 
@@ -208,11 +206,12 @@ const DashboardTesoreria: React.FC = () => {
     try {
       const token = localStorage.getItem('access_token');
       
-      // Cargar configuraciones para todas las cuentas bancarias
+      // Cargar configuraciones vigentes para la fecha seleccionada
       const configMap = new Map<number, number[]>();
       
       for (const account of bankAccounts) {
-        const response = await fetch(`http://localhost:8000/api/v1/gmf-config/${account.id}`, {
+        // 🔑 Pasar fecha como parámetro para obtener config vigente para ese día
+        const response = await fetch(`http://localhost:8000/api/v1/gmf-config/${account.id}?fecha=${selectedDate}`, {
           headers: {
             'Content-Type': 'application/json',
             ...(token && { Authorization: `Bearer ${token}` })
@@ -257,7 +256,8 @@ const DashboardTesoreria: React.FC = () => {
         },
         body: JSON.stringify({
           cuenta_bancaria_id: cuentaId,
-          conceptos_seleccionados: conceptos  // Enviar IDs directamente
+          conceptos_seleccionados: conceptos,  // Enviar IDs directamente
+          fecha_vigencia_desde: selectedDate  // 🔑 Fecha desde la cual aplica esta configuración
         })
       });
       
@@ -314,32 +314,56 @@ const DashboardTesoreria: React.FC = () => {
     if (!cuentaId) return;
     
     const conceptos = gmfConfig.get(cuentaId) || [];
+    console.log('🔧 [GMF] Guardando conceptos para cuenta:', cuentaId, 'Conceptos:', conceptos, 'Fecha:', selectedDate);
     
     // Guardar configuración y esperar respuesta
     await guardarConfiguracionGMF(cuentaId, conceptos);
+    console.log('✅ [GMF] Configuración guardada');
     
-    // 🔄 IMPORTANTE: Forzar recálculo de GMF en backend después de guardar config
+    // 🔄 IMPORTANTE: Forzar recálculo de GMF en backend SOLO para la fecha actual
     try {
       const token = localStorage.getItem('access_token');
-      await fetch('http://localhost:8000/api/v1/gmf/recalculate', {
+      console.log('🔄 [GMF] Iniciando recálculo para fecha:', selectedDate, 'cuenta:', cuentaId);
+      
+      const response = await fetch('http://localhost:8000/api/v1/gmf/recalculate', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           ...(token && { Authorization: `Bearer ${token}` })
         },
         body: JSON.stringify({
-          fecha: selectedDate,
-          cuentaId: cuentaId
+          fecha: selectedDate,  // 🔑 Solo recalcula el día que estás viendo/modificando
+          cuenta_bancaria_id: cuentaId
         })
       });
       
-      // Recargar configuración GMF para asegurar que se actualice en el estado
-      await cargarConfiguracionGMF();
+      if (!response.ok) {
+        throw new Error(`Error en recálculo: ${response.status} ${response.statusText}`);
+      }
       
-      // Recargar transacciones para mostrar el GMF actualizado
-      await cargarTransacciones(true);
+      const result = await response.json();
+      console.log('✅ [GMF] Recálculo completado:', result);
+      
+      // ⏱️ Esperar 1 segundo para asegurar que el backend persistió completamente
+      console.log('⏱️ [GMF] Esperando 1 segundo antes de recargar...');
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Recargar configuración GMF
+      await cargarConfiguracionGMF();
+      console.log('✅ [GMF] Configuración recargada');
+      
+      // 🔄 Forzar recarga completa de transacciones (invalidar cache completamente)
+      console.log('🔄 [GMF] Forzando recarga completa de transacciones...');
+      await recargarTransaccionesCompleto();
+      
+      // Segundo reload para asegurar que se obtengan los datos actualizados
+      await new Promise(resolve => setTimeout(resolve, 200));
+      await recargarTransaccionesCompleto();
+      
+      console.log('✅ [GMF] Transacciones recargadas - GMF debe estar visible');
     } catch (error) {
-      console.error('Error forzando recálculo GMF:', error);
+      console.error('❌ [GMF] Error forzando recálculo GMF:', error);
+      alert('Error al recalcular GMF. Por favor, recarga la página.');
     }
     
     cerrarModalGMF();
@@ -510,9 +534,11 @@ const DashboardTesoreria: React.FC = () => {
         ...cuenta,
         cuenta_moneda_id: `${cuenta.id}_${cuenta.monedas[0] || 'COP'}`,
         moneda_display: cuenta.monedas[0] || 'COP',
-        tipo_moneda: cuenta.monedas[0] || 'COP', // Agregar tipo_moneda para compatibilidad
+        tipo_moneda: cuenta.monedas[0] || 'COP',
         nombre_con_moneda: `${cuenta.banco.nombre} ${cuenta.numero_cuenta.slice(-4)}`,
-        es_expansion: false
+        es_expansion: false,
+        es_cop_autocalculado: false,
+        cuenta_usd_par_id: null
       }));
     }
 
@@ -520,15 +546,38 @@ const DashboardTesoreria: React.FC = () => {
     
     cuentas.forEach(cuenta => {
       const monedas = cuenta.monedas && cuenta.monedas.length > 0 ? cuenta.monedas : ['COP'];
+      const tieneUSD = monedas.includes('USD');
+      const tieneCOP = monedas.includes('COP');
+      const esMultiMoneda = tieneUSD && tieneCOP;
       
-      monedas.forEach((moneda, index) => {
+      // Ordenar monedas: USD primero (editable), luego COP (calculado)
+      const monedasOrdenadas = [...monedas].sort((a, b) => {
+        if (a === 'USD' && b === 'COP') return -1;
+        if (a === 'COP' && b === 'USD') return 1;
+        return 0;
+      });
+      
+      // Primero agregar todas las cuentas para obtener los IDs
+      let cuentaUsdId: number | null = null;
+      
+      monedasOrdenadas.forEach((moneda, index) => {
+        // Para cuentas multi-moneda: COP es auto-calculado desde USD
+        const esCopAutocalculado = esMultiMoneda && moneda === 'COP';
+        
+        // Si es USD de una cuenta multi-moneda, guardar su ID para referencia
+        if (esMultiMoneda && moneda === 'USD') {
+          cuentaUsdId = cuenta.id;
+        }
+        
         const cuentaExpandida = {
           ...cuenta,
           cuenta_moneda_id: `${cuenta.id}_${moneda}`,
           moneda_display: moneda,
-          tipo_moneda: moneda, // Agregar tipo_moneda para compatibilidad
+          tipo_moneda: moneda,
           nombre_con_moneda: `${cuenta.banco.nombre} ${cuenta.numero_cuenta.slice(-4)} (${moneda})`,
-          es_expansion: index > 0 // Marcar si es una expansión de moneda adicional
+          es_expansion: index > 0,
+          es_cop_autocalculado: esCopAutocalculado,
+          cuenta_usd_par_id: esCopAutocalculado ? cuentaUsdId : null
         };
         console.log(`📊 Cuenta expandida:`, cuentaExpandida);
         cuentasExpandidas.push(cuentaExpandida);
@@ -701,11 +750,20 @@ const DashboardTesoreria: React.FC = () => {
           return sum + valorValido;
         }, 0);
       } else if (concepto.id) {
-        // Fallback: si no hay cuentas cargadas, usar transacciones directamente (filtradas por cuentas)
-        const idsConCuentasFiltradas = cuentasFiltradas.map(c => c.id);
-        const transaccionesConcepto = transacciones.filter(t => 
-          t.concepto_id === concepto.id && t.cuenta_id !== null && idsConCuentasFiltradas.includes(t.cuenta_id)
-        );
+        // Fallback: si no hay cuentas cargadas, usar transacciones directamente
+        // Si hay filtros aplicados, filtrar por cuentas; si no, incluir todas
+        const idsConCuentasFiltradas = cuentasFiltradas.map(c => Number(c.id));
+        const transaccionesConcepto = transacciones.filter(t => {
+          if (t.concepto_id !== concepto.id) return false;
+          
+          // Si hay filtros de compañía o banco, aplicar el filtro de cuentas
+          if (companiasFiltradas.length > 0 || bancosFiltrados.length > 0) {
+            return t.cuenta_id !== null && idsConCuentasFiltradas.includes(Number(t.cuenta_id));
+          }
+          
+          // Si no hay filtros, incluir todas las transacciones del concepto
+          return true;
+        });
         total = transaccionesConcepto.reduce((sum, t) => {
           const monto = Number(t.monto) || 0;
           return sum + (isFinite(monto) ? monto : 0);
@@ -722,14 +780,37 @@ const DashboardTesoreria: React.FC = () => {
   // Función para calcular el SALDO NETO INICIAL PAGADURÍA (suma de SALDO INICIAL + CONSUMO + VENTANILLA)
   const calculateSaldoNetoPagaduria = (cuentaId?: number) => {
     try {
-      // Encontrar los conceptos específicos de pagaduría por nombre exacto
+      // 🔧 CORRECCIÓN: Primero intentar obtener el valor guardado en BD (concepto ID 4)
+      const saldoNetoPagaduriaConcepto = conceptos.find(c => c.nombre === 'SALDO NETO INICIAL PAGADURÍA');
+      
+      if (saldoNetoPagaduriaConcepto?.id && cuentaId) {
+        // Intentar leer directamente de la BD
+        const valorBD = obtenerMontoConSignos(saldoNetoPagaduriaConcepto.id, cuentaId);
+        if (isFinite(valorBD) && valorBD !== 0) {
+          return valorBD;
+        }
+      }
+      
+      // Si no hay valor en BD, calcular desde componentes
+      const saldoInicialConcepto = conceptos.find(c => c.nombre === 'SALDO INICIAL');
       const consumo = conceptos.find(c => c.nombre === 'CONSUMO');
       const ventanilla = conceptos.find(c => c.nombre === 'VENTANILLA');
 
       let total = 0;
 
-      // ✅ SALDO INICIAL: Usar el valor calculado desde el día anterior
-      const montoSaldoInicial = calculateSaldoInicialDesdeDiaAnterior(cuentaId);
+      // 🔧 CORRECCIÓN: Primero usar SALDO INICIAL de la BD del día actual
+      // Solo usar día anterior si no hay SALDO INICIAL guardado
+      let montoSaldoInicial = 0;
+      
+      if (saldoInicialConcepto?.id && cuentaId) {
+        // Intentar leer SALDO INICIAL de la BD del día actual
+        montoSaldoInicial = obtenerMontoConSignos(saldoInicialConcepto.id, cuentaId);
+      }
+      
+      // Si no hay SALDO INICIAL en BD, usar fallback del día anterior
+      if (!isFinite(montoSaldoInicial) || montoSaldoInicial === 0) {
+        montoSaldoInicial = calculateSaldoInicialDesdeDiaAnterior(cuentaId);
+      }
       
       // Validar el monto del saldo inicial
       if (isFinite(montoSaldoInicial)) {
@@ -832,6 +913,18 @@ const DashboardTesoreria: React.FC = () => {
   // Función para calcular el SALDO FINAL CUENTAS (suma de SALDO NETO INICIAL PAGADURÍA + SUB-TOTAL TESORERÍA)
   const calculateSaldoFinalCuentas = (cuentaId?: number) => {
     try {
+      // 🔧 CORRECCIÓN: Primero intentar leer el valor guardado en BD (concepto ID 51)
+      const saldoFinalCuentasConcepto = conceptos.find(c => c.nombre === 'SALDO FINAL CUENTAS');
+      
+      if (saldoFinalCuentasConcepto?.id && cuentaId) {
+        // Intentar leer directamente de la BD
+        const valorBD = obtenerMontoConSignos(saldoFinalCuentasConcepto.id, cuentaId);
+        if (isFinite(valorBD) && valorBD !== 0) {
+          return valorBD;
+        }
+      }
+      
+      // Si no hay valor en BD, calcular desde componentes
       // Obtener el SALDO NETO INICIAL PAGADURÍA
       const saldoNetoPagaduria = calculateSaldoNetoPagaduria(cuentaId);
       
@@ -1236,34 +1329,20 @@ const DashboardTesoreria: React.FC = () => {
             )}
           </div>
           
-          {/* Toggle Multi-Moneda */}
-          <div className="flex items-center space-x-2">
-            <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-              Multi-Moneda
-            </label>
-            <button
-              onClick={() => setUsarMultiMoneda(!usarMultiMoneda)}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                usarMultiMoneda ? 'bg-green-600' : 'bg-gray-200 dark:bg-gray-700'
-              }`}
-            >
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                  usarMultiMoneda ? 'translate-x-6' : 'translate-x-1'
-                }`}
-              />
-            </button>
-          </div>
-          
-          <button className="session-activity flex items-center space-x-2 px-3 py-2 bg-bolivar-600 text-white rounded-lg hover:bg-bolivar-700 transition-colors text-sm">
-            <RefreshCw className="h-4 w-4" />
-            <span>Actualizar</span>
-          </button>
-          
-          <button className="session-activity flex items-center space-x-2 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm">
-            <Download className="h-4 w-4" />
-            <span>Exportar</span>
-          </button>
+
+          {!readOnly && (
+            <>
+              <button className="session-activity flex items-center space-x-2 px-3 py-2 bg-bolivar-600 text-white rounded-lg hover:bg-bolivar-700 transition-colors text-sm">
+                <RefreshCw className="h-4 w-4" />
+                <span>Actualizar</span>
+              </button>
+              
+              <button className="session-activity flex items-center space-x-2 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm">
+                <Download className="h-4 w-4" />
+                <span>Exportar</span>
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -1334,13 +1413,11 @@ const DashboardTesoreria: React.FC = () => {
                   <th key={account.cuenta_moneda_id} className="bg-gray-100 dark:bg-gray-700 border border-gray-400 dark:border-gray-500 px-1 py-1 text-gray-700 dark:text-gray-300 font-medium text-center text-xs">
                     <div className="flex flex-col">
                       <span>{account.numero_cuenta}</span>
-                      {usarMultiMoneda && (
-                        <span className={`px-1 py-0.5 rounded text-xs font-bold ${
-                          account.moneda_display === 'USD' ? 'bg-green-200 text-green-800' : 'bg-yellow-200 text-yellow-800'
-                        }`}>
-                          {account.moneda_display}
-                        </span>
-                      )}
+                      <span className={`px-1 py-0.5 rounded text-xs font-bold ${
+                        account.moneda_display === 'USD' ? 'bg-green-200 text-green-800' : 'bg-yellow-200 text-yellow-800'
+                      }`}>
+                        {account.moneda_display}
+                      </span>
                     </div>
                   </th>
                 ))}
@@ -1456,7 +1533,7 @@ const DashboardTesoreria: React.FC = () => {
                             </div>
                             
                             {/* Ícono de configuración - Alineado a la derecha */}
-                            {(user?.role === 'administrador' || user?.role === 'tesoreria') && (
+                            {!readOnly && (user?.role === 'administrador' || user?.role === 'tesoreria') && (
                               <button
                                 onClick={() => abrirModalGMF(account.id)}
                                 className="p-1 text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-200 transition-colors hover:bg-green-100 dark:hover:bg-green-900/20 rounded"
@@ -1470,6 +1547,26 @@ const DashboardTesoreria: React.FC = () => {
                       );
                     } else {
                       // Para otros conceptos, usar celda editable normal
+                      // PERO si es una cuenta COP auto-calculada (tiene par USD), mostrar valor calculado y bloquear
+                      
+                      if (account.es_cop_autocalculado && account.cuenta_usd_par_id && trm) {
+                        // Obtener el valor USD del par y multiplicar por TRM, dividir entre 1000
+                        const valorUSD = concepto.id ? obtenerMontoConSignos(concepto.id, account.cuenta_usd_par_id, 'USD') : 0;
+                        const valorCOPCalculado = safeNumericValue((valorUSD * trm.valor) / 1000);
+                        
+                        return (
+                          <td key={`data-${account.cuenta_moneda_id}`} className="border border-gray-400 dark:border-gray-500 px-1 py-1 text-center text-xs bg-gray-100 dark:bg-gray-700">
+                            {valorCOPCalculado !== 0 ? (
+                              <span className={`font-medium ${valorCOPCalculado < 0 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'}`} title="Valor auto-calculado desde USD × TRM">
+                                {valorCOPCalculado < 0 ? `(${formatCurrency(Math.abs(valorCOPCalculado))})` : formatCurrency(valorCOPCalculado)}
+                              </span>
+                            ) : (
+                              <span className="text-gray-400 dark:text-gray-500">—</span>
+                            )}
+                          </td>
+                        );
+                      }
+                      
                       const valorCuenta = concepto.id ? obtenerMontoConSignos(concepto.id, account.id, account.tipo_moneda) : 0;
                       const valorSeguro = safeNumericValue(valorCuenta);
                       
@@ -1482,7 +1579,7 @@ const DashboardTesoreria: React.FC = () => {
                             companiaId={account.compania.id}
                             currency={account.tipo_moneda}
                             onGuardar={guardarTransaccionConSignos}
-                            disabled={!concepto.id || transaccionesLoading || isConceptoAutoCalculado(concepto.id)}
+                            disabled={readOnly || !concepto.id || transaccionesLoading || isConceptoAutoCalculado(concepto.id)}
                           />
                         </td>
                       );
@@ -1805,10 +1902,10 @@ const DashboardTesoreria: React.FC = () => {
 };
 
 // Componente wrapper con ErrorBoundary
-const DashboardTesoreriaWithErrorBoundary: React.FC = () => {
+const DashboardTesoreriaWithErrorBoundary: React.FC<DashboardTesoreriaProps> = ({ readOnly = false }) => {
   return (
     <ErrorBoundary>
-      <DashboardTesoreria />
+      <DashboardTesoreria readOnly={readOnly} />
     </ErrorBoundary>
   );
 };

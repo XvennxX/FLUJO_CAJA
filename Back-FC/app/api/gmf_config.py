@@ -56,75 +56,135 @@ async def crear_config_gmf(
     current_user: Usuario = Depends(get_current_user)
 ):
     """
-    Crear una nueva configuración GMF para una cuenta bancaria.
+    Crear una nueva versión de configuración GMF para una cuenta bancaria.
+    
+    Sistema de versionado:
+    - Cada cambio crea un NUEVO registro con fecha_vigencia_desde
+    - Las configs anteriores se mantienen activas para preservar histórico
+    - La config aplicable para un día X es la más reciente con fecha_vigencia_desde <= X
+    
     Solo admin y tesorería pueden crear configuraciones.
     """
-    # Verificar permisos - normalizar a minúsculas para comparación
-    rol_normalizado = current_user.rol.lower() if current_user.rol else ''
-    if rol_normalizado not in ['admin', 'administrador', 'tesoreria', 'tesorería']:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"No tienes permisos para configurar GMF. Tu rol es: {current_user.rol}"
-        )
+    import logging
+    logger = logging.getLogger(__name__)
     
-    # Normalizar lista recibida filtrando IDs permitidos
-    conceptos_filtrados = filtrar_conceptos_permitidos(config.conceptos_seleccionados)
-    if not conceptos_filtrados:
-        # Si viene vacío o sin válidos, usar TODOS los permitidos por defecto
-        conceptos_filtrados = list(CONCEPTOS_GMF_PERMITIDOS)
-
-    # Verificar si ya existe una configuración activa para esta cuenta
-    config_existente = db.query(GMFConfig).filter(
-        GMFConfig.cuenta_bancaria_id == config.cuenta_bancaria_id,
-        GMFConfig.activo == True
-    ).first()
-    
-    if config_existente:
-        # Actualizar configuración existente con lista filtrada
-        config_existente.conceptos_seleccionados = json.dumps(conceptos_filtrados)
-        db.commit()
-        db.refresh(config_existente)
+    try:
+        # Verificar permisos - normalizar a minúsculas para comparación
+        rol_normalizado = current_user.rol.lower() if current_user.rol else ''
+        if rol_normalizado not in ['admin', 'administrador', 'tesoreria', 'tesorería']:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"No tienes permisos para configurar GMF. Tu rol es: {current_user.rol}"
+            )
         
-        # Parsear conceptos para respuesta
-        config_existente.conceptos_seleccionados = json.loads(config_existente.conceptos_seleccionados) if config_existente.conceptos_seleccionados else []
-        return config_existente
-    
-    # Crear nueva configuración
-    nueva_config = GMFConfig(
-        cuenta_bancaria_id=config.cuenta_bancaria_id,
-        conceptos_seleccionados=json.dumps(conceptos_filtrados),
-        activo=True
-    )
-    
-    db.add(nueva_config)
-    db.commit()
-    db.refresh(nueva_config)
-    
-    # Parsear conceptos para respuesta
-    nueva_config.conceptos_seleccionados = json.loads(nueva_config.conceptos_seleccionados) if nueva_config.conceptos_seleccionados else []
-    return nueva_config
+        # Normalizar lista recibida filtrando IDs permitidos
+        conceptos_filtrados = filtrar_conceptos_permitidos(config.conceptos_seleccionados)
+        if not conceptos_filtrados:
+            # Si viene vacío o sin válidos, usar TODOS los permitidos por defecto
+            conceptos_filtrados = list(CONCEPTOS_GMF_PERMITIDOS)
+
+        # 🔍 Verificar si ya existe una config para esta cuenta/fecha exacta
+        config_misma_fecha = db.query(GMFConfig).filter(
+            GMFConfig.cuenta_bancaria_id == config.cuenta_bancaria_id,
+            GMFConfig.fecha_vigencia_desde == config.fecha_vigencia_desde,
+            GMFConfig.activo == True
+        ).first()
+        
+        if config_misma_fecha:
+            # Si ya existe config para esta fecha, ACTUALIZAR conceptos (caso de corrección)
+            config_misma_fecha.conceptos_seleccionados = json.dumps(conceptos_filtrados)
+            db.flush()  # Forzar escritura inmediata
+            db.commit()
+            db.refresh(config_misma_fecha)
+            
+            logger.info(f"✅ Config GMF actualizada: ID={config_misma_fecha.id}, cuenta={config.cuenta_bancaria_id}, fecha_vigencia={config.fecha_vigencia_desde}")
+            
+            # Parsear conceptos para respuesta ANTES de retornar
+            response_data = GMFConfigResponse(
+                id=config_misma_fecha.id,
+                cuenta_bancaria_id=config_misma_fecha.cuenta_bancaria_id,
+                conceptos_seleccionados=json.loads(config_misma_fecha.conceptos_seleccionados),
+                activo=config_misma_fecha.activo,
+                fecha_vigencia_desde=config_misma_fecha.fecha_vigencia_desde,
+                fecha_creacion=config_misma_fecha.fecha_creacion,
+                fecha_actualizacion=config_misma_fecha.fecha_actualizacion
+            )
+            return response_data
+        
+        # ✨ Crear NUEVA versión de configuración (no sobrescribir)
+        nueva_config = GMFConfig(
+            cuenta_bancaria_id=config.cuenta_bancaria_id,
+            conceptos_seleccionados=json.dumps(conceptos_filtrados),
+            fecha_vigencia_desde=config.fecha_vigencia_desde,
+            activo=True
+        )
+        
+        db.add(nueva_config)
+        db.flush()  # Forzar escritura inmediata
+        db.commit()
+        db.refresh(nueva_config)
+        
+        logger.info(f"✅ Config GMF creada: ID={nueva_config.id}, cuenta={config.cuenta_bancaria_id}, fecha_vigencia={config.fecha_vigencia_desde}, conceptos={conceptos_filtrados}")
+        
+        # Parsear conceptos para respuesta ANTES de retornar
+        response_data = GMFConfigResponse(
+            id=nueva_config.id,
+            cuenta_bancaria_id=nueva_config.cuenta_bancaria_id,
+            conceptos_seleccionados=json.loads(nueva_config.conceptos_seleccionados) if nueva_config.conceptos_seleccionados else [],
+            activo=nueva_config.activo,
+            fecha_vigencia_desde=nueva_config.fecha_vigencia_desde,
+            fecha_creacion=nueva_config.fecha_creacion,
+            fecha_actualizacion=nueva_config.fecha_actualizacion
+        )
+        return response_data
+        
+    except HTTPException:
+        # Re-lanzar excepciones HTTP sin modificar
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error creando config GMF: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error interno: {str(e)}")
 
 @router.get("/{cuenta_bancaria_id}", response_model=GMFConfigResponse)
 async def obtener_config_gmf(
     cuenta_bancaria_id: int,
+    fecha: str = None,  # Opcional: obtener config vigente para fecha específica (formato YYYY-MM-DD)
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user)
 ):
     """
-    Obtener la configuración GMF activa de una cuenta bancaria.
+    Obtener la configuración GMF vigente para una cuenta.
+    Si se proporciona fecha, devuelve la config vigente para esa fecha.
+    Si no, devuelve la más reciente.
     """
-    config = db.query(GMFConfig).filter(
+    from datetime import datetime
+    
+    query = db.query(GMFConfig).filter(
         GMFConfig.cuenta_bancaria_id == cuenta_bancaria_id,
         GMFConfig.activo == True
-    ).first()
+    )
+    
+    # Si se especifica fecha, filtrar por fecha_vigencia_desde <= fecha
+    if fecha:
+        try:
+            fecha_obj = datetime.strptime(fecha, '%Y-%m-%d').date()
+            query = query.filter(GMFConfig.fecha_vigencia_desde <= fecha_obj)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Formato de fecha inválido. Use YYYY-MM-DD")
+    
+    # Ordenar por fecha_vigencia_desde descendente (más reciente primero)
+    config = query.order_by(GMFConfig.fecha_vigencia_desde.desc()).first()
     
     if not config:
         # Retornar configuración vacía en lugar de error
+        from datetime import date as date_type
         return {
             "id": 0,
             "cuenta_bancaria_id": cuenta_bancaria_id,
             "conceptos_seleccionados": [],
             "activo": True,
+            "fecha_vigencia_desde": fecha_obj if fecha else date_type.today(),
             "fecha_creacion": None,
             "fecha_actualizacion": None
         }

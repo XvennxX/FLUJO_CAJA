@@ -1,27 +1,32 @@
 """
-Schemas Pydantic para la configuración GMF con versionado histórico
+Schemas Pydantic para la configuración de Cuatro por Mil con versionado histórico
+Similar a gmf_config.py pero para el área de Pagaduría
 """
 from pydantic import BaseModel
-from typing import List, Optional, Union
+from typing import List, Optional
 from datetime import datetime, date
 
-class GMFConfigBase(BaseModel):
-    """Schema base para GMF Config"""
+
+class CuatroPorMilConfigBase(BaseModel):
+    """Schema base para Cuatro por Mil Config"""
     cuenta_bancaria_id: int
     conceptos_seleccionados: List[int]  # IDs de conceptos
 
-class GMFConfigCreate(GMFConfigBase):
-    """Schema para crear configuración GMF con fecha de vigencia"""
+
+class CuatroPorMilConfigCreate(CuatroPorMilConfigBase):
+    """Schema para crear configuración Cuatro por Mil con fecha de vigencia"""
     fecha_vigencia_desde: date  # Desde qué fecha aplica esta configuración
 
-class GMFConfigUpdate(BaseModel):
-    """Schema para actualizar configuración GMF"""
+
+class CuatroPorMilConfigUpdate(BaseModel):
+    """Schema para actualizar configuración Cuatro por Mil"""
     conceptos_seleccionados: List[int]  # IDs de conceptos
     fecha_vigencia_desde: Optional[date] = None  # Si se modifica, desde qué fecha aplica
     activo: Optional[bool] = True
 
-class GMFConfigResponse(GMFConfigBase):
-    """Schema de respuesta para configuración GMF"""
+
+class CuatroPorMilConfigResponse(CuatroPorMilConfigBase):
+    """Schema de respuesta para configuración Cuatro por Mil"""
     id: int
     activo: bool
     fecha_vigencia_desde: date  # Desde cuándo es válida esta config

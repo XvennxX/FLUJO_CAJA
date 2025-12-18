@@ -3,11 +3,12 @@
 Inicializa configuraciones GMF por cuenta con "punto cero":
 - Crea una GMFConfig activa por cada cuenta que no tenga una.
 - Selecciona como componentes TODOS los conceptos activos excepto el propio 'GMF'.
-- Fecha de creación = ahora; esto servirá como vigencia desde hoy en adelante.
+- fecha_vigencia_desde = hoy (desde cuándo aplica esta config)
+- fecha_creacion = ahora (cuándo se creó el registro)
 
-Se puede re-ejecutar; no duplica si ya existe una configuración activa.
+Se puede re-ejecutar; no duplica si ya existe una configuración para la misma cuenta/fecha.
 """
-from datetime import datetime
+from datetime import datetime, date
 import json
 import sys
 from pathlib import Path
@@ -49,30 +50,38 @@ def main():
         print(f"📊 Conceptos base seleccionados para GMF: {len(componentes_ids)} conceptos")
         print(f"   IDs: {componentes_ids}")
 
+        hoy = date.today()
         creadas = 0
         actualizadas = 0
+        
         for cuenta in cuentas:
+            # Verificar si existe config para esta cuenta/fecha
             existe = db.query(GMFConfig).filter(
                 GMFConfig.cuenta_bancaria_id == cuenta.id,
+                GMFConfig.fecha_vigencia_desde == hoy,
                 GMFConfig.activo == True
             ).first()
+            
             if existe:
                 # Actualizar la config existente con los componentes correctos
                 existe.conceptos_seleccionados = json.dumps(componentes_ids)
-                existe.fecha_creacion = datetime.now()
                 actualizadas += 1
             else:
+                # Crear nueva versión de configuración
                 cfg = GMFConfig(
                     cuenta_bancaria_id=cuenta.id,
                     conceptos_seleccionados=json.dumps(componentes_ids),
+                    fecha_vigencia_desde=hoy,
                     activo=True,
                     fecha_creacion=datetime.now(),
                 )
                 db.add(cfg)
                 creadas += 1
+                
         db.commit()
         print(f"✅ Configuraciones GMF creadas: {creadas}")
         print(f"✅ Configuraciones GMF actualizadas: {actualizadas}")
+        print(f"📅 Vigencia desde: {hoy}")
     except Exception as e:
         db.rollback()
         print(f"❌ Error: {e}")

@@ -62,8 +62,8 @@ const DashboardTesoreria: React.FC = () => {
   
 
   
-  // Estado para multi-moneda
-  const [usarMultiMoneda, setUsarMultiMoneda] = useState<boolean>(false);
+  // Estado para multi-moneda - SIEMPRE activado
+  const [usarMultiMoneda, setUsarMultiMoneda] = useState<boolean>(true);
   
   // Estados para filtros
   const [companiasFiltradas, setCompaniasFiltradas] = useState<number[]>([]);
@@ -97,32 +97,18 @@ const DashboardTesoreria: React.FC = () => {
   const convertirMoneda = (monto: number, tipoMonedaCuenta: string): number => {
     console.log(`🔄 convertirMoneda called:`, { monto, tipoMonedaCuenta, usarMultiMoneda, trmValue: trm?.valor });
     
-    if (!usarMultiMoneda || !trm) {
-      console.log(`❌ No conversion: usarMultiMoneda=${usarMultiMoneda}, trm=${!!trm}`);
-      return monto;
-    }
-    
-    // Si la cuenta es USD, convertir de COP a USD
-    if (tipoMonedaCuenta === 'USD') {
-      const convertido = Math.floor((monto / trm.valor) * 100) / 100; // Truncar a 2 decimales (no redondear)
-      console.log(`💱 Converting ${monto} COP to ${convertido} USD (TRM: ${trm.valor})`);
-      return convertido;
-    }
-    
-    // Si la cuenta es COP, mantener el monto original
-    console.log(`✅ Keeping COP value: ${monto}`);
+    // Los valores ya están guardados en su moneda nativa (USD para cuentas USD, COP para cuentas COP)
+    // No necesitan conversión para mostrar en la misma moneda
+    console.log(`✅ Returning native value: ${monto} ${tipoMonedaCuenta}`);
     return monto;
   };
 
-  // Función para obtener monto con conversión de moneda
+  // Función para obtener monto sin conversión (valores ya están en moneda nativa)
   const obtenerMontoConConversion = (conceptoId: number, cuentaId: number, tipoMonedaCuenta?: string): number => {
     const montoOriginal = obtenerMonto(conceptoId, cuentaId);
     
-    if (!usarMultiMoneda || !tipoMonedaCuenta) {
-      return montoOriginal;
-    }
-    
-    return convertirMoneda(montoOriginal, tipoMonedaCuenta);
+    // Los valores ya están guardados en su moneda nativa, no necesitan conversión
+    return montoOriginal;
   };
 
   // Función para filtrar cuentas bancarias
@@ -318,7 +304,14 @@ const DashboardTesoreria: React.FC = () => {
     cuentas.forEach(cuenta => {
       const monedas = cuenta.monedas && cuenta.monedas.length > 0 ? cuenta.monedas : ['COP'];
       
-      monedas.forEach((moneda, index) => {
+      // Ordenar monedas: USD primero (editable), luego COP (calculado)
+      const monedasOrdenadas = monedas.sort((a, b) => {
+        if (a === 'USD' && b === 'COP') return -1; // USD antes que COP
+        if (a === 'COP' && b === 'USD') return 1;  // COP después de USD
+        return 0; // Mantener orden para otras monedas
+      });
+      
+      monedasOrdenadas.forEach((moneda, index) => {
         const cuentaExpandida = {
           ...cuenta,
           cuenta_moneda_id: `${cuenta.id}_${moneda}`,
@@ -498,11 +491,20 @@ const DashboardTesoreria: React.FC = () => {
           return sum + valorValido;
         }, 0);
       } else if (concepto.id) {
-        // Fallback: si no hay cuentas cargadas, usar transacciones directamente (filtradas por cuentas)
-        const idsConCuentasFiltradas = cuentasFiltradas.map(c => c.id);
-        const transaccionesConcepto = transacciones.filter(t => 
-          t.concepto_id === concepto.id && t.cuenta_id !== null && idsConCuentasFiltradas.includes(t.cuenta_id)
-        );
+        // Fallback: si no hay cuentas cargadas, usar transacciones directamente
+        // Si hay filtros aplicados, filtrar por cuentas; si no, incluir todas
+        const idsConCuentasFiltradas = cuentasFiltradas.map(c => Number(c.id));
+        const transaccionesConcepto = transacciones.filter(t => {
+          if (t.concepto_id !== concepto.id) return false;
+          
+          // Si hay filtros de compañía o banco, aplicar el filtro de cuentas
+          if (companiasFiltradas.length > 0 || bancosFiltrados.length > 0) {
+            return t.cuenta_id !== null && idsConCuentasFiltradas.includes(Number(t.cuenta_id));
+          }
+          
+          // Si no hay filtros, incluir todas las transacciones del concepto
+          return true;
+        });
         total = transaccionesConcepto.reduce((sum, t) => {
           const monto = Number(t.monto) || 0;
           return sum + (isFinite(monto) ? monto : 0);
@@ -1023,24 +1025,7 @@ const DashboardTesoreria: React.FC = () => {
             )}
           </div>
           
-          {/* Toggle Multi-Moneda */}
-          <div className="flex items-center space-x-2">
-            <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-              Multi-Moneda
-            </label>
-            <button
-              onClick={() => setUsarMultiMoneda(!usarMultiMoneda)}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                usarMultiMoneda ? 'bg-green-600' : 'bg-gray-200 dark:bg-gray-700'
-              }`}
-            >
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                  usarMultiMoneda ? 'translate-x-6' : 'translate-x-1'
-                }`}
-              />
-            </button>
-          </div>
+
           
           <button className="session-activity flex items-center space-x-2 px-3 py-2 bg-bolivar-600 text-white rounded-lg hover:bg-bolivar-700 transition-colors text-sm">
             <RefreshCw className="h-4 w-4" />
@@ -1121,13 +1106,11 @@ const DashboardTesoreria: React.FC = () => {
                   <th key={account.cuenta_moneda_id} className="bg-gray-100 dark:bg-gray-700 border border-gray-400 dark:border-gray-500 px-1 py-1 text-gray-700 dark:text-gray-300 font-medium text-center text-xs">
                     <div className="flex flex-col">
                       <span>{account.numero_cuenta}</span>
-                      {usarMultiMoneda && (
-                        <span className={`px-1 py-0.5 rounded text-xs font-bold ${
-                          account.moneda_display === 'USD' ? 'bg-green-200 text-green-800' : 'bg-yellow-200 text-yellow-800'
-                        }`}>
-                          {account.moneda_display}
-                        </span>
-                      )}
+                      <span className={`px-1 py-0.5 rounded text-xs font-bold ${
+                        account.moneda_display === 'USD' ? 'bg-green-200 text-green-800' : 'bg-yellow-200 text-yellow-800'
+                      }`}>
+                        {account.moneda_display}
+                      </span>
                     </div>
                   </th>
                 ))}

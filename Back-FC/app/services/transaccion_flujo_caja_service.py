@@ -136,16 +136,7 @@ class TransaccionFlujoCajaService:
         self.db.commit()
         self.db.refresh(db_transaccion)
         
-        # 🔥 AUTO-RECÁLCULO COMPLETO: Procesar AMBOS dashboards para mantener consistencia total
-        self.dependencias_service.procesar_dependencias_completas_ambos_dashboards(
-            fecha=transaccion_data.fecha,
-            concepto_modificado_id=transaccion_data.concepto_id,
-            cuenta_id=transaccion_data.cuenta_id,
-            compania_id=transaccion_data.compania_id,
-            usuario_id=usuario_id
-        )
-
-        # 🔁 RECÁLCULOS DIRECTOS CLAVE
+        # � RECÁLCULOS DIRECTOS CLAVE - PRIMERO (GMF y 4x1000 antes de subtotales)
         try:
             # Si se crea uno de los componentes base (1,2,3), recalcular SALDO NETO INICIAL PAGADURÍA (ID 4)
             if transaccion_data.concepto_id in (1, 2, 3) and transaccion_data.cuenta_id:
@@ -164,10 +155,29 @@ class TransaccionFlujoCajaService:
                     usuario_id=usuario_id,
                     compania_id=transaccion_data.compania_id
                 )
-            # Asegurar escritura
+            
+            # Recalcular CUATRO POR MIL para la cuenta/fecha según configuración vigente (Pagaduría)
+            if transaccion_data.cuenta_id:
+                self.dependencias_service.recalcular_cuatro_por_mil(
+                    fecha=transaccion_data.fecha,
+                    cuenta_id=transaccion_data.cuenta_id,
+                    usuario_id=usuario_id,
+                    compania_id=transaccion_data.compania_id
+                )
+            # Asegurar escritura de GMF y 4x1000 antes de calcular subtotales
             self.db.commit()
         except Exception as e:
-            logger.warning(f"⚠️ Error en recálculos directos post-creación: {e}")
+            logger.warning(f"⚠️ Error en recálculos directos GMF/4x1000: {e}")
+
+        # 🔥 AUTO-RECÁLCULO COMPLETO: Procesar AMBOS dashboards DESPUÉS de GMF y 4x1000
+        # para que los subtotales incluyan los valores actualizados
+        self.dependencias_service.procesar_dependencias_completas_ambos_dashboards(
+            fecha=transaccion_data.fecha,
+            concepto_modificado_id=transaccion_data.concepto_id,
+            cuenta_id=transaccion_data.cuenta_id,
+            compania_id=transaccion_data.compania_id,
+            usuario_id=usuario_id
+        )
         
         return db_transaccion
     
@@ -248,17 +258,7 @@ class TransaccionFlujoCajaService:
             self.db.flush()
             logger.info("🔄 DEBUG: flush() ejecutado antes del recálculo completo")
 
-            # Recalculo completo
-            resultado_dependencias = self.dependencias_service.procesar_dependencias_completas_ambos_dashboards(
-                fecha=fecha_procesar,
-                concepto_modificado_id=db_transaccion.concepto_id,
-                cuenta_id=db_transaccion.cuenta_id,
-                compania_id=db_transaccion.compania_id,
-                usuario_id=usuario_id
-            )
-            logger.info(f"✅ DEBUG: Auto-cálculo completo ejecutado")
-
-            # Recalculo directo saldo neto inicial pagaduría si concepto base afectado
+            # PRIMERO: Recalculo directo saldo neto inicial pagaduría si concepto base afectado
             if db_transaccion.concepto_id in (1,2,3):
                 try:
                     resultado_saldo_neto = self.dependencias_service.recalcular_saldo_neto_inicial_pagaduria(
@@ -271,7 +271,7 @@ class TransaccionFlujoCajaService:
                 except Exception as e:
                     logger.warning(f"⚠️ Error recálculo directo saldo neto inicial: {e}")
 
-            # Recalculo GMF para la cuenta con la configuración vigente a la fecha (si existe)
+            # SEGUNDO: Recalculo GMF para la cuenta con la configuración vigente a la fecha (si existe)
             if db_transaccion.cuenta_id:
                 try:
                     resultado_gmf = self.dependencias_service.recalcular_gmf(
@@ -283,6 +283,29 @@ class TransaccionFlujoCajaService:
                     logger.info(f"🔁 DEBUG: Recalculo GMF directo resultado: {resultado_gmf}")
                 except Exception as e:
                     logger.warning(f"⚠️ Error recálculo GMF directo: {e}")
+            
+            # TERCERO: Recalculo CUATRO POR MIL para la cuenta con la configuración vigente (Pagaduría)
+            if db_transaccion.cuenta_id:
+                try:
+                    resultado_cpm = self.dependencias_service.recalcular_cuatro_por_mil(
+                        fecha=fecha_procesar,
+                        cuenta_id=db_transaccion.cuenta_id,
+                        usuario_id=usuario_id,
+                        compania_id=db_transaccion.compania_id
+                    )
+                    logger.info(f"🔁 DEBUG: Recalculo 4x1000 directo resultado: {resultado_cpm}")
+                except Exception as e:
+                    logger.warning(f"⚠️ Error recálculo 4x1000 directo: {e}")
+            
+            # CUARTO: Recalculo completo de subtotales DESPUÉS de GMF y 4x1000
+            resultado_dependencias = self.dependencias_service.procesar_dependencias_completas_ambos_dashboards(
+                fecha=fecha_procesar,
+                concepto_modificado_id=db_transaccion.concepto_id,
+                cuenta_id=db_transaccion.cuenta_id,
+                compania_id=db_transaccion.compania_id,
+                usuario_id=usuario_id
+            )
+            logger.info(f"✅ DEBUG: Auto-cálculo completo ejecutado")
         else:
             logger.info(f"❌ DEBUG: CONDICIÓN NO CUMPLIDA - Auto-cálculo NO ejecutado")
         
@@ -599,6 +622,35 @@ class TransaccionFlujoCajaService:
                 self.db.commit()
             except Exception as e:
                 logger.warning(f"⚠️ Error recalculando GMF en actualización simple: {e}")
+        
+        # 🔄 RECÁLCULO 4x1000: Si se actualizó el monto y hay cuenta asociada, recalcular Cuatro por Mil
+        if 'monto' in update_data and transaccion.cuenta_id:
+            try:
+                logger.info(f"🔁 Recalculando 4x1000 después de actualización simple para cuenta {transaccion.cuenta_id}")
+                self.dependencias_service.recalcular_cuatro_por_mil(
+                    fecha=transaccion.fecha,
+                    cuenta_id=transaccion.cuenta_id,
+                    usuario_id=usuario_id,
+                    compania_id=transaccion.compania_id
+                )
+                self.db.commit()
+            except Exception as e:
+                logger.warning(f"⚠️ Error recalculando 4x1000 en actualización simple: {e}")
+        
+        # 🔄 RECÁLCULO SUBTOTALES: Después de GMF y 4x1000, recalcular dependencias completas
+        if 'monto' in update_data and transaccion.cuenta_id:
+            try:
+                logger.info(f"🔁 Recalculando subtotales después de actualización simple")
+                self.dependencias_service.procesar_dependencias_completas_ambos_dashboards(
+                    fecha=transaccion.fecha,
+                    concepto_modificado_id=transaccion.concepto_id,
+                    cuenta_id=transaccion.cuenta_id,
+                    compania_id=transaccion.compania_id,
+                    usuario_id=usuario_id
+                )
+                self.db.commit()
+            except Exception as e:
+                logger.warning(f"⚠️ Error recalculando subtotales en actualización simple: {e}")
         
         return transaccion
     

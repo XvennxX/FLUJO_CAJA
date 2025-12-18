@@ -1,4 +1,4 @@
-# 🏦 Sistema de Flujo de Caja - Bolívar
+    # 🏦 Sistema de Flujo de Caja - Bolívar
 
 Sistema integral de gestión de flujo de caja desarrollado para Bolívar, que incluye automatización de TRM, dashboards especializados por rol y auditoría completa de operaciones.
 
@@ -112,25 +112,96 @@ FLUJO_CAJA/
 ## 🚀 **Inicio Rápido**
 
 ### **1. Configuración del Backend**
+
+#### **📋 Prerrequisitos:**
+- **Python 3.8+** instalado
+- **MySQL 8.0+** corriendo
+- **Git** instalado
+
+#### **🚀 Primera vez en un equipo nuevo (Configuración completa):**
+
 ```bash
-# Navegar al backend
+# 1. Clonar repositorio (si no lo has hecho)
+git clone <URL_DEL_REPO>
+cd FLUJO_CAJA
+
+# 2. Crear entorno virtual en la RAÍZ del proyecto
+python -m venv .venv
+
+# 3. Activar entorno virtual (⚠️ IMPORTANTE: desde la raíz del proyecto)
+# Windows PowerShell:
+.venv\Scripts\Activate.ps1
+# Git Bash/Linux/Mac:
+source .venv/scripts/activate
+# Nota: Los warnings "sed: command not found" en Git Bash son normales
+
+# 4. Navegar al backend
 cd Back-FC
 
-# Activar entorno virtual
-# Windows:
-.venv\Scripts\activate
-# Linux/Mac:
-source .venv/bin/activate
-
-# Instalar dependencias
+# 5. Actualizar pip e instalar dependencias
+pip install --upgrade pip
 pip install -r requirements.txt
 
-# Configurar base de datos (crear .env con credenciales)
-python scripts/setup/create_initial_data.py
+# 9. Configurar variables de entorno
+cp .env.example .env
+# Editar .env con tus credenciales de MySQL:
+# DB_HOST=localhost
+# DB_PORT=3306
+# DB_USER=root
+# DB_PASSWORD=tu_password
+# DB_NAME=flujo_caja
+# SECRET_KEY=tu_clave_secreta_muy_larga
 
-# Iniciar servidor
+# 10. Crear base de datos MySQL
+# mysql -u root -p
+# CREATE DATABASE flujo_caja CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+# EXIT;
+
+# 11. Iniciar servidor
 python run_server.py
 # Backend disponible en: http://localhost:8000
+# API Docs: http://localhost:8000/docs
+```
+
+#### **🔄 Uso diario (entorno ya configurado):**
+```bash
+# Desde la raíz del proyecto FLUJO_CAJA
+source .venv/scripts/activate  # Git Bash/Linux/Mac
+# O: .venv\Scripts\Activate.ps1  # Windows PowerShell
+
+cd Back-FC
+python run_server.py
+```
+
+#### **🚨 Solución de Problemas Comunes:**
+
+**Si `pip install -r requirements.txt` falla:**
+```bash
+# Instalar bcrypt compatible primero
+pip install "bcrypt==4.0.1"
+# Luego intentar de nuevo
+pip install -r requirements.txt
+```
+
+**Error "pydantic_settings not found":**
+```bash
+pip install pydantic pydantic-settings --upgrade
+```
+
+**Error de autenticación/login:**
+- Verificar que bcrypt sea versión 4.0.1
+- Verificar credenciales en la tabla usuarios
+- Usar credenciales del README (admin123, etc.)
+
+**Error "No module named 'app'":**
+- Verificar que estés en el directorio Back-FC
+- Verificar que el entorno virtual esté activado (debe aparecer (.venv))
+
+**Error de conexión MySQL:**
+```bash
+# Verificar que MySQL esté corriendo
+# Windows: services.msc -> MySQL80
+# Linux: sudo systemctl status mysql
 ```
 
 ### **2. Configuración del Frontend**
@@ -151,16 +222,46 @@ npm run dev
 
 ### **3. Configuración de Base de Datos**
 ```sql
--- Crear base de datos
+-- 1. Conectar a MySQL
+mysql -u root -p
+
+-- 2. Crear base de datos
 CREATE DATABASE flujo_caja CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
---  Variables de entorno (.env en Back-FC)
+-- 3. Verificar creación
+SHOW DATABASES;
+
+-- 4. Salir
+EXIT;
+```
+
+**Variables de entorno (.env en Back-FC):**
+```env
 DB_HOST=localhost
 DB_PORT=3306
 DB_USER=root
 DB_PASSWORD=tu_password
 DB_NAME=flujo_caja
-SECRET_KEY=tu_clave_secreta
+SECRET_KEY=tu_clave_secreta_muy_larga_minimo_32_caracteres
+```
+
+### **4. Verificación del Sistema**
+
+#### **✅ Verificar que todo funciona:**
+```bash
+# 1. Verificar backend
+curl http://localhost:8000/docs
+# Debe abrir Swagger UI
+
+# 2. Verificar autenticación (desde Back-FC con entorno activado)
+python scripts/utils/listar_usuarios_api.py
+
+# 3. Verificar TRM
+curl http://localhost:8000/api/v1/trm/actual
+
+# 4. Probar login en frontend
+# Email: carlos.gomez@flujo.com
+# Password: admin123
 ```
 
 ## 🔗 **URLs del Sistema**
@@ -172,12 +273,21 @@ SECRET_KEY=tu_clave_secreta
 - **ReDoc:** http://localhost:8000/redoc
 
 ### **📋 Credenciales de Prueba (Desarrollo - Locales)**
+
+**⚠️ IMPORTANTE:** Estas credenciales solo funcionan después de ejecutar el script de configuración inicial.
+
 | Rol | Usuario | Email | Password | Dashboard |
 |-----|---------|-------|----------|-----------|  
 | **Administrador** | Carlos Gómez | carlos.gomez@flujo.com | admin123 | Administración completa |
 | **Tesorería** | María López | maria.lopez@flujo.com | tesoreria123 | Análisis de liquidez |
 | **Pagaduría** | Javier Ruiz | javier.ruiz@flujo.com | pagaduria123 | Gestión de nómina |
-| **Mesa de Dinero** | Laura Martínez | laura.martinez@flujo.com | mesa123 | Flujo de caja principal |## 📊 **Funcionalidades por Módulo**
+| **Mesa de Dinero** | Laura Martínez | laura.martinez@flujo.com | mesa123 | Visualización completa (solo lectura) |
+
+**📝 Crear usuarios iniciales (si no existen):**
+```bash
+# Desde Back-FC con entorno activado
+python scripts/setup/create_initial_data.py
+```## 📊 **Funcionalidades por Módulo**
 
 ### **🔄 Automatización TRM**
 ```bash
@@ -292,20 +402,84 @@ scripts/build/build-prod.bat  # Script Windows
 - **CORS:** Configurado para dominios específicos
 - **Variables sensibles:** Almacenadas en archivos .env
 
+## 🛠️ **Comandos Útiles de Desarrollo**
+
+### **Backend (desde Back-FC con entorno activado):**
+```bash
+# Listar usuarios del sistema
+python scripts/utils/listar_usuarios_api.py
+
+# Verificar estado del sistema
+python scripts/utils/verify_system_status.py
+
+# Probar TRM manualmente
+python scripts/trm/test_trm.py
+
+# Crear datos iniciales
+python scripts/setup/create_initial_data.py
+
+# Ver logs en tiempo real
+tail -f logs/app.log  # Linux/Mac
+# Windows: abrir logs/app.log en editor
+```
+
+### **Frontend (desde Front-FC):**
+```bash
+# Verificar configuración
+npm run check
+
+# Linter
+npm run lint
+
+# Build para producción
+npm run build:prod
+
+# Analizar bundle
+npm run analyze
+```
+
+### **Base de Datos:**
+```bash
+# Conectar a MySQL
+mysql -u root -p flujo_caja
+
+# Ver tablas
+SHOW TABLES;
+
+# Ver usuarios
+SELECT id, nombre, email, rol FROM usuarios;
+
+# Ver TRM actual
+SELECT * FROM trm ORDER BY fecha DESC LIMIT 5;
+```
+
 ## 📞 **Soporte y Contacto**
 
 ### **Desarrollo**
 Para consultas técnicas o problemas:
-1. Revisar documentación específica en `/docs`
-2. Ejecutar scripts de verificación (`npm run check`, etc.)
-3. Consultar logs del sistema
-4. Verificar conectividad backend-frontend
+1. **Verificar configuración:** Seguir pasos de "Solución de Problemas Comunes"
+2. **Revisar logs:** `Back-FC/logs/app.log`
+3. **Verificar servicios:** MySQL corriendo, puertos 8000 y 5000 disponibles
+4. **Comandos de diagnóstico:** Scripts en `scripts/utils/`
 
-### **Datos de Contacto del Sistema**
-- **TRM Service:** Automático 19:00 diaria
-- **Backend:** http://localhost:8000
+### **URLs de Acceso**
 - **Frontend:** http://localhost:5000
-- **Base de datos:** MySQL flujo_caja
+- **Backend API:** http://localhost:8000
+- **API Docs (Swagger):** http://localhost:8000/docs
+- **ReDoc:** http://localhost:8000/redoc
+- **Base de datos:** MySQL `flujo_caja` en puerto 3306
+
+### **Estructura de Archivos Importante**
+```
+FLUJO_CAJA/
+├── .venv/                    # ⚠️ Entorno virtual (RAÍZ del proyecto)
+├── Back-FC/
+│   ├── .env                  # Variables de entorno (crear desde .env.example)
+│   ├── logs/app.log         # Logs del sistema
+│   └── run_server.py        # Servidor principal
+└── Front-FC/
+    └── package.json         # Dependencias Node.js
+```
 
 ---
 

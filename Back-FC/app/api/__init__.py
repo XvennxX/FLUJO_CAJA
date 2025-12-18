@@ -16,6 +16,7 @@ from .informes_consolidados import router as informes_consolidados_router
 from .auditoria import router as auditoria_router
 from .conciliacion_contable import router as conciliacion_contable_router
 from .gmf import router as gmf_router
+from .cuatro_por_mil import router as cuatro_por_mil_router
 
 api_router = APIRouter(prefix="/api/v1")
 
@@ -36,3 +37,4 @@ api_router.include_router(informes_consolidados_router)
 api_router.include_router(auditoria_router)
 api_router.include_router(conciliacion_contable_router)
 api_router.include_router(gmf_router, prefix="/gmf", tags=["GMF"])
+api_router.include_router(cuatro_por_mil_router, prefix="/cuatro-por-mil", tags=["Cuatro Por Mil"])

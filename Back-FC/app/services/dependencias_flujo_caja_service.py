@@ -13,6 +13,7 @@ import logging
 from app.models.conceptos_flujo_caja import ConceptoFlujoCaja, TipoDependencia, AreaConcepto
 from app.models.transacciones_flujo_caja import TransaccionFlujoCaja, AreaTransaccion
 from app.models.gmf_config import GMFConfig
+from app.models.cuatro_por_mil_config import CuatroPorMilConfig
 from app.models.cuentas_bancarias import CuentaBancaria
 from app.schemas.flujo_caja import AreaTransaccionSchema
 from app.services.dias_habiles_service import DiasHabilesService
@@ -160,25 +161,40 @@ class DependenciasFlujoCajaService:
         usuario_id: Optional[int] = None,
         compania_id: Optional[int] = None
     ) -> Optional[Dict]:
-        """Recalcula GMF para una cuenta en una fecha usando configuración activa.
+        """Recalcula GMF para una cuenta en una fecha usando configuración vigente.
         GMF = SUM(abs(montos conceptos seleccionados)) * 4 / 1000
         Persistido como transacción del concepto 'GMF'.
+        
+        Sistema de versionado:
+        - Busca la config con fecha_vigencia_desde <= fecha (más reciente)
+        - Ejemplo: Día 5 usa config creada en día 5, día 6 hereda la misma config
         """
         try:
-            # Configuración activa efectiva para la fecha
-            # Tomar la última configuración creada antes o en la fecha; si no existe, usar la última activa
+            # 🔍 Buscar configuración vigente para la fecha
+            # Tomar la config más reciente cuya fecha_vigencia_desde sea <= fecha objetivo
             config = self.db.query(GMFConfig).filter(
                 GMFConfig.cuenta_bancaria_id == cuenta_id,
                 GMFConfig.activo == True,
-                GMFConfig.fecha_creacion <= datetime.combine(fecha, datetime.min.time())
-            ).order_by(GMFConfig.fecha_creacion.desc()).first()
+                GMFConfig.fecha_vigencia_desde <= fecha
+            ).order_by(GMFConfig.fecha_vigencia_desde.desc()).first()
+            
             if not config:
+                logger.warning(f"⚠️ No hay config GMF vigente para cuenta {cuenta_id} en fecha {fecha}")
+                logger.info(f"🔍 Buscando cualquier config activa para cuenta {cuenta_id}...")
+                
+                # Intentar obtener cualquier config activa (fallback)
                 config = self.db.query(GMFConfig).filter(
                     GMFConfig.cuenta_bancaria_id == cuenta_id,
                     GMFConfig.activo == True
-                ).order_by(GMFConfig.fecha_creacion.desc()).first()
-            if not config:
-                return None
+                ).order_by(GMFConfig.fecha_vigencia_desde.desc()).first()
+                
+                if not config:
+                    logger.error(f"❌ No existe NINGUNA config GMF activa para cuenta {cuenta_id}")
+                    return None
+                else:
+                    logger.info(f"✅ Usando config fallback: ID={config.id}, vigencia_desde={config.fecha_vigencia_desde}")
+
+            logger.info(f"🔍 [GMF] Config encontrada: ID={config.id}, vigencia_desde={config.fecha_vigencia_desde}, cuenta={cuenta_id}")
 
             try:
                 conceptos_ids = []
@@ -193,10 +209,13 @@ class DependenciasFlujoCajaService:
                             else:
                                 conceptos_ids.append(int(elem))
                 conceptos_ids = [cid for cid in conceptos_ids if isinstance(cid, int)]
-            except Exception:
+                logger.info(f"📊 [GMF] Conceptos parseados: {conceptos_ids}")
+            except Exception as e:
+                logger.error(f"❌ [GMF] Error parseando conceptos: {e}")
                 conceptos_ids = []
 
             if not conceptos_ids:
+                logger.warning(f"⚠️ [GMF] No hay conceptos válidos en config")
                 return None
 
             # Obtener concepto GMF
@@ -212,17 +231,21 @@ class DependenciasFlujoCajaService:
                 TransaccionFlujoCaja.concepto_id.in_(conceptos_ids)
             ).all()
 
+            logger.info(f"💰 [GMF] Transacciones componentes encontradas: {len(transacciones_componentes)}")
+
             base_suma = Decimal('0.00')
             componentes_montos = {}
             for t in transacciones_componentes:
                 base_suma += t.monto
                 componentes_montos[str(t.concepto_id)] = float(t.monto)
+                logger.info(f"   └─ Concepto {t.concepto_id}: {t.monto}")
 
             if base_suma == 0:
                 # Si no hay base, podemos opcionalmente no crear / mantener existente en 0
                 logger.info(f"ℹ️ GMF base en 0 para cuenta {cuenta_id} fecha {fecha}")
 
             gmf_calculado = (base_suma * Decimal('4')) / Decimal('1000')
+            logger.info(f"🧮 [GMF] Cálculo: {base_suma} × 4 ÷ 1000 = {gmf_calculado}")
 
             # Upsert transacción GMF (área tesorería)
             trans_gmf = self.db.query(TransaccionFlujoCaja).filter(
@@ -283,10 +306,143 @@ class DependenciasFlujoCajaService:
                 "cuenta_id": cuenta_id,
                 "componentes": componentes_montos,
                 "base_suma_componentes": float(base_suma),
-                "vigencia_desde": config.fecha_creacion.isoformat() if config and config.fecha_creacion else None
+                "vigencia_desde": config.fecha_vigencia_desde.isoformat() if config and config.fecha_vigencia_desde else None
             }
         except Exception as e:
             logger.error(f"❌ Error recalc GMF directo: {e}")
+            return None
+
+    # Lista fija de IDs de conceptos permitidos para Cuatro por Mil (Pagaduría)
+    CONCEPTOS_CUATRO_POR_MIL_PERMITIDOS = {68, 69, 76, 78}  # EMBARGOS, OTROS PAGOS, PAGO SOI, OTROS IMPTOS
+    CONCEPTO_CUATRO_POR_MIL_ID = 80  # ID del concepto CUATRO POR MIL
+
+    def recalcular_cuatro_por_mil(
+        self,
+        fecha: date,
+        cuenta_id: int,
+        usuario_id: Optional[int] = None,
+        compania_id: Optional[int] = None
+    ) -> Optional[Dict]:
+        """Recalcula CUATRO POR MIL para una cuenta en una fecha usando configuración vigente.
+        CUATRO_POR_MIL = SUM(abs(montos conceptos seleccionados)) * 4 / 1000
+        Persistido como transacción del concepto 'CUATRO POR MIL' (ID 80).
+        
+        Sistema de versionado (igual que GMF):
+        - Busca la config con fecha_vigencia_desde <= fecha (más reciente)
+        - Si no hay config, usa TODOS los conceptos permitidos por defecto
+        """
+        try:
+            import json
+            
+            # 🔍 Buscar configuración vigente para la fecha
+            config = self.db.query(CuatroPorMilConfig).filter(
+                CuatroPorMilConfig.cuenta_bancaria_id == cuenta_id,
+                CuatroPorMilConfig.activo == True,
+                CuatroPorMilConfig.fecha_vigencia_desde <= fecha
+            ).order_by(CuatroPorMilConfig.fecha_vigencia_desde.desc()).first()
+            
+            # Determinar conceptos a usar
+            if config and config.conceptos_seleccionados:
+                try:
+                    conceptos_ids = json.loads(config.conceptos_seleccionados)
+                    conceptos_ids = [int(cid) for cid in conceptos_ids if isinstance(cid, (int, str))]
+                    logger.info(f"📊 [4x1000] Config encontrada para cuenta {cuenta_id}, conceptos: {conceptos_ids}")
+                except:
+                    conceptos_ids = list(self.CONCEPTOS_CUATRO_POR_MIL_PERMITIDOS)
+            else:
+                # Sin config = usar TODOS los permitidos por defecto
+                conceptos_ids = list(self.CONCEPTOS_CUATRO_POR_MIL_PERMITIDOS)
+                logger.info(f"📊 [4x1000] Sin config para cuenta {cuenta_id}, usando todos: {conceptos_ids}")
+
+            if not conceptos_ids:
+                logger.warning(f"⚠️ [4x1000] No hay conceptos válidos para cuenta {cuenta_id}")
+                return None
+
+            # Obtener transacciones de conceptos componentes
+            transacciones_componentes = self.db.query(TransaccionFlujoCaja).filter(
+                TransaccionFlujoCaja.fecha == fecha,
+                TransaccionFlujoCaja.cuenta_id == cuenta_id,
+                TransaccionFlujoCaja.concepto_id.in_(conceptos_ids)
+            ).all()
+
+            logger.info(f"💰 [4x1000] Transacciones componentes encontradas: {len(transacciones_componentes)}")
+
+            # Sumar valores absolutos (todos son egresos)
+            base_suma = Decimal('0.00')
+            componentes_montos = {}
+            for t in transacciones_componentes:
+                base_suma += abs(t.monto)  # Usar valor absoluto
+                componentes_montos[str(t.concepto_id)] = float(t.monto)
+                logger.info(f"   └─ Concepto {t.concepto_id}: {t.monto}")
+
+            # Calcular Cuatro por Mil (4x1000) - resultado siempre negativo (egreso)
+            cuatro_por_mil_calculado = (base_suma * Decimal('4')) / Decimal('1000')
+            cuatro_por_mil_final = -cuatro_por_mil_calculado if cuatro_por_mil_calculado > 0 else Decimal('0.00')
+            logger.info(f"🧮 [4x1000] Cálculo: |{base_suma}| × 4 ÷ 1000 = {cuatro_por_mil_final}")
+
+            # Upsert transacción CUATRO POR MIL (área pagaduría)
+            trans_cpm = self.db.query(TransaccionFlujoCaja).filter(
+                TransaccionFlujoCaja.fecha == fecha,
+                TransaccionFlujoCaja.concepto_id == self.CONCEPTO_CUATRO_POR_MIL_ID,
+                TransaccionFlujoCaja.cuenta_id == cuenta_id,
+                TransaccionFlujoCaja.area == AreaTransaccion.pagaduria
+            ).first()
+
+            if trans_cpm:
+                monto_anterior = trans_cpm.monto
+                if monto_anterior != cuatro_por_mil_final:
+                    trans_cpm.monto = cuatro_por_mil_final
+                    trans_cpm.descripcion = "Auto-calculado 4x1000"
+                    auditoria_actual = trans_cpm.auditoria or {}
+                    auditoria_actual.update({
+                        "accion": "actualizacion_automatica_4x1000",
+                        "usuario_id": usuario_id or 1,
+                        "timestamp": datetime.now().isoformat(),
+                        "cambio": {
+                            "monto_anterior": float(monto_anterior),
+                            "monto_nuevo": float(cuatro_por_mil_final),
+                            "componentes": componentes_montos,
+                            "formula": "SUM(abs(componentes))*4/1000"
+                        },
+                        "tipo": "cuatro_por_mil_automatico"
+                    })
+                    trans_cpm.auditoria = auditoria_actual
+                    logger.info(f"✅ [4x1000] Actualizado cuenta {cuenta_id}: {monto_anterior} → {cuatro_por_mil_final}")
+            else:
+                nueva_cpm = TransaccionFlujoCaja(
+                    fecha=fecha,
+                    concepto_id=self.CONCEPTO_CUATRO_POR_MIL_ID,
+                    cuenta_id=cuenta_id,
+                    monto=cuatro_por_mil_final,
+                    descripcion="Auto-calculado 4x1000",
+                    usuario_id=usuario_id or 1,
+                    area=AreaTransaccion.pagaduria,
+                    compania_id=compania_id or 1,
+                    auditoria={
+                        "accion": "creacion_automatica_4x1000",
+                        "usuario_id": usuario_id or 1,
+                        "timestamp": datetime.now().isoformat(),
+                        "componentes": componentes_montos,
+                        "formula": "SUM(abs(componentes))*4/1000",
+                        "monto_calculado": float(cuatro_por_mil_final),
+                        "tipo": "cuatro_por_mil_automatico"
+                    }
+                )
+                self.db.add(nueva_cpm)
+                logger.info(f"✅ [4x1000] Creado cuenta {cuenta_id}: {cuatro_por_mil_final}")
+
+            self.db.flush()
+            return {
+                "concepto_id": self.CONCEPTO_CUATRO_POR_MIL_ID,
+                "concepto_nombre": "CUATRO POR MIL",
+                "monto_nuevo": float(cuatro_por_mil_final),
+                "cuenta_id": cuenta_id,
+                "componentes": componentes_montos,
+                "base_suma_componentes": float(base_suma),
+                "vigencia_desde": config.fecha_vigencia_desde.isoformat() if config and config.fecha_vigencia_desde else "default"
+            }
+        except Exception as e:
+            logger.error(f"❌ Error recalc 4x1000 directo: {e}")
             return None
     
     def procesar_dependencias_completas_ambos_dashboards(
@@ -350,14 +506,29 @@ class DependenciasFlujoCajaService:
             )
             resultados["cross_dashboard"] = cross_updates
             
-            total_actualizaciones = len(resultados["tesoreria"]) + len(resultados["pagaduria"]) + len(cross_updates)
+            # 4. 🚀 PROPAGACIÓN AL DÍA SIGUIENTE: Si cambió SALDO FINAL CUENTAS, propagar al siguiente día
+            logger.info("🔗 Propagando cambios al día siguiente...")
+            try:
+                propagacion_updates = self._propagar_saldo_final_a_dia_siguiente(
+                    fecha=fecha,
+                    cuenta_id=cuenta_id,
+                    compania_id=compania_id,
+                    usuario_id=usuario_id
+                )
+                resultados["propagacion_dia_siguiente"] = propagacion_updates
+                logger.info(f"✅ Propagación procesada: {len(propagacion_updates)} actualizaciones al día siguiente")
+            except Exception as e:
+                logger.error(f"❌ Error en propagación al día siguiente: {e}")
+                resultados["propagacion_dia_siguiente"] = []
+            
+            total_actualizaciones = len(resultados["tesoreria"]) + len(resultados["pagaduria"]) + len(cross_updates) + len(resultados.get("propagacion_dia_siguiente", []))
             logger.info(f"🎉 Recálculo completo finalizado: {total_actualizaciones} actualizaciones totales")
             
             return resultados
             
         except Exception as e:
             logger.error(f"💥 Error en recálculo completo: {e}")
-            return {"tesoreria": [], "pagaduria": [], "cross_dashboard": []}
+            return {"tesoreria": [], "pagaduria": [], "cross_dashboard": [], "propagacion_dia_siguiente": []}
     
     def _procesar_dependencias_cruzadas(
         self,
@@ -453,6 +624,171 @@ class DependenciasFlujoCajaService:
             
         except Exception as e:
             logger.error(f"❌ Error en dependencias cruzadas: {e}")
+            return []
+
+    def _propagar_saldo_final_a_dia_siguiente(
+        self,
+        fecha: date,
+        cuenta_id: Optional[int] = None,
+        compania_id: Optional[int] = None,
+        usuario_id: Optional[int] = None
+    ) -> List[Dict]:
+        """
+        🚀 PROPAGACIÓN EN CASCADA:
+        Cuando se actualiza SALDO FINAL CUENTAS (ID 51) del día N:
+        1. Actualiza SALDO INICIAL (ID 1) del día N+1
+        2. Recalcula todos los conceptos dependientes del día N+1
+        """
+        try:
+            actualizaciones = []
+            
+            SALDO_FINAL_CUENTAS_ID = 51
+            SALDO_INICIAL_ID = 1
+            
+            # Obtener todas las cuentas si no se especifica una
+            if cuenta_id:
+                cuentas_ids = [cuenta_id]
+            else:
+                cuentas_ids = [c.id for c in self.db.query(CuentaBancaria).filter(CuentaBancaria.activo == 1).all()]
+            
+            for cuenta in cuentas_ids:
+                # Buscar SALDO FINAL CUENTAS del día actual
+                saldo_final_hoy = self.db.query(TransaccionFlujoCaja).filter(
+                    TransaccionFlujoCaja.fecha == fecha,
+                    TransaccionFlujoCaja.concepto_id == SALDO_FINAL_CUENTAS_ID,
+                    TransaccionFlujoCaja.cuenta_id == cuenta,
+                    TransaccionFlujoCaja.area == AreaTransaccion.tesoreria
+                ).first()
+                
+                if not saldo_final_hoy:
+                    continue
+                
+                monto_saldo_final = saldo_final_hoy.monto
+                
+                # Calcular el próximo día hábil
+                try:
+                    fecha_siguiente = self.dias_habiles_service.proximo_dia_habil(fecha, incluir_fecha_actual=False)
+                except:
+                    fecha_siguiente = fecha + timedelta(days=1)
+                
+                # Verificar si existen transacciones para el día siguiente
+                transacciones_dia_siguiente = self.db.query(TransaccionFlujoCaja).filter(
+                    TransaccionFlujoCaja.fecha == fecha_siguiente,
+                    TransaccionFlujoCaja.cuenta_id == cuenta
+                ).count()
+                
+                if transacciones_dia_siguiente == 0:
+                    logger.info(f"ℹ️ No hay transacciones para {fecha_siguiente} cuenta {cuenta}, omitiendo propagación")
+                    continue
+                
+                # Buscar/actualizar SALDO INICIAL del día siguiente
+                saldo_inicial_siguiente = self.db.query(TransaccionFlujoCaja).filter(
+                    TransaccionFlujoCaja.fecha == fecha_siguiente,
+                    TransaccionFlujoCaja.concepto_id == SALDO_INICIAL_ID,
+                    TransaccionFlujoCaja.cuenta_id == cuenta,
+                    TransaccionFlujoCaja.area == AreaTransaccion.tesoreria
+                ).first()
+                
+                saldo_inicial_actualizado = False
+                monto_anterior = Decimal('0')
+                
+                if saldo_inicial_siguiente:
+                    monto_anterior = saldo_inicial_siguiente.monto
+                    if monto_anterior != monto_saldo_final:
+                        saldo_inicial_siguiente.monto = monto_saldo_final
+                        saldo_inicial_siguiente.descripcion = f"Propagado: SALDO FINAL CUENTAS del {fecha}"
+                        auditoria = saldo_inicial_siguiente.auditoria or {}
+                        auditoria.update({
+                            "accion": "propagacion_cascada",
+                            "usuario_id": usuario_id or 1,
+                            "timestamp": datetime.now().isoformat(),
+                            "origen": {
+                                "fecha_origen": fecha.isoformat(),
+                                "concepto_origen_id": SALDO_FINAL_CUENTAS_ID,
+                                "monto_origen": float(monto_saldo_final)
+                            },
+                            "cambio": {
+                                "monto_anterior": float(monto_anterior),
+                                "monto_nuevo": float(monto_saldo_final)
+                            }
+                        })
+                        saldo_inicial_siguiente.auditoria = auditoria
+                        saldo_inicial_actualizado = True
+                        
+                        logger.info(f"🔄 PROPAGACIÓN: SALDO INICIAL {fecha_siguiente} cuenta {cuenta}: ${monto_anterior} → ${monto_saldo_final}")
+                else:
+                    # Crear SALDO INICIAL para el día siguiente
+                    nuevo_saldo = TransaccionFlujoCaja(
+                        fecha=fecha_siguiente,
+                        concepto_id=SALDO_INICIAL_ID,
+                        cuenta_id=cuenta,
+                        monto=monto_saldo_final,
+                        descripcion=f"Propagado: SALDO FINAL CUENTAS del {fecha}",
+                        usuario_id=usuario_id or 1,
+                        area=AreaTransaccion.tesoreria,
+                        compania_id=compania_id or 1,
+                        auditoria={
+                            "accion": "creacion_propagacion_cascada",
+                            "usuario_id": usuario_id or 1,
+                            "timestamp": datetime.now().isoformat(),
+                            "origen": {
+                                "fecha_origen": fecha.isoformat(),
+                                "concepto_origen_id": SALDO_FINAL_CUENTAS_ID,
+                                "monto_origen": float(monto_saldo_final)
+                            }
+                        }
+                    )
+                    self.db.add(nuevo_saldo)
+                    saldo_inicial_actualizado = True
+                    logger.info(f"🚀 PROPAGACIÓN: SALDO INICIAL creado para {fecha_siguiente} cuenta {cuenta}: ${monto_saldo_final}")
+                
+                if saldo_inicial_actualizado:
+                    self.db.flush()
+                    
+                    actualizaciones.append({
+                        "concepto_id": SALDO_INICIAL_ID,
+                        "concepto_nombre": "SALDO INICIAL",
+                        "fecha_destino": fecha_siguiente.isoformat(),
+                        "cuenta_id": cuenta,
+                        "monto_anterior": float(monto_anterior),
+                        "monto_nuevo": float(monto_saldo_final),
+                        "tipo": "propagacion_cascada",
+                        "origen": f"SALDO FINAL CUENTAS del {fecha}"
+                    })
+                    
+                    # 🔥 RECÁLCULO EN CASCADA: Recalcular dependientes del día siguiente
+                    logger.info(f"🔄 Recalculando dependencias para {fecha_siguiente} cuenta {cuenta}...")
+                    try:
+                        # Recalcular SALDO NETO INICIAL PAGADURÍA
+                        self.recalcular_saldo_neto_inicial_pagaduria(
+                            fecha=fecha_siguiente,
+                            cuenta_id=cuenta,
+                            usuario_id=usuario_id,
+                            compania_id=compania_id
+                        )
+                        
+                        # Recalcular SUB-TOTAL TESORERÍA y otros dependientes
+                        self.procesar_dependencias_avanzadas(
+                            fecha=fecha_siguiente,
+                            area=AreaTransaccionSchema.tesoreria,
+                            cuenta_id=cuenta,
+                            compania_id=compania_id,
+                            usuario_id=usuario_id
+                        )
+                        
+                        logger.info(f"✅ Cascada completada para {fecha_siguiente} cuenta {cuenta}")
+                    except Exception as e:
+                        logger.error(f"❌ Error en cascada para {fecha_siguiente} cuenta {cuenta}: {e}")
+            
+            if actualizaciones:
+                self.db.commit()
+                logger.info(f"✅ Propagación completada: {len(actualizaciones)} SALDO INICIAL actualizados")
+            
+            return actualizaciones
+            
+        except Exception as e:
+            self.db.rollback()
+            logger.error(f"❌ Error en propagación al día siguiente: {e}")
             return []
 
     def procesar_dependencias_avanzadas(

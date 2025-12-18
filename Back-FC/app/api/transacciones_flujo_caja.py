@@ -378,6 +378,86 @@ async def actualizar_transaccion(
 
 # MÉTODO DUPLICADO ELIMINADO - Solo mantenemos el primer método PUT con auto-cálculo
 
+@router.post("/recalcular-rango-fechas", status_code=status.HTTP_200_OK)
+def recalcular_rango_fechas(
+    fecha_inicio: date,
+    fecha_fin: date,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """
+    Endpoint para recalcular TODAS las dependencias en un rango de fechas.
+    Procesa día por día en orden cronológico para asegurar propagación correcta.
+    
+    Útil cuando:
+    - Se corrigen datos históricos y necesitan propagarse
+    - SALDO FINAL del día N debe pasar a SALDO INICIAL del día N+1
+    """
+    try:
+        from datetime import timedelta
+        
+        print(f"🔄 Iniciando recálculo de rango: {fecha_inicio} a {fecha_fin}")
+        
+        if fecha_fin < fecha_inicio:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="fecha_fin debe ser mayor o igual a fecha_inicio"
+            )
+        
+        dependencias_service = DependenciasFlujoCajaService(db)
+        resultados_por_fecha = {}
+        total_actualizaciones = 0
+        
+        # Procesar día por día en orden cronológico
+        fecha_actual = fecha_inicio
+        while fecha_actual <= fecha_fin:
+            print(f"  📅 Procesando {fecha_actual}...")
+            
+            resultado_dia = dependencias_service.procesar_dependencias_completas_ambos_dashboards(
+                fecha=fecha_actual,
+                compania_id=getattr(current_user, "compania_id", 1),
+                usuario_id=current_user.id
+            )
+            
+            updates_dia = (
+                len(resultado_dia.get("tesoreria", [])) + 
+                len(resultado_dia.get("pagaduria", [])) + 
+                len(resultado_dia.get("cross_dashboard", [])) +
+                len(resultado_dia.get("propagacion_dia_siguiente", []))
+            )
+            
+            resultados_por_fecha[fecha_actual.isoformat()] = {
+                "actualizaciones": updates_dia,
+                "detalles": {
+                    "tesoreria": len(resultado_dia.get("tesoreria", [])),
+                    "pagaduria": len(resultado_dia.get("pagaduria", [])),
+                    "cross_dashboard": len(resultado_dia.get("cross_dashboard", [])),
+                    "propagacion": len(resultado_dia.get("propagacion_dia_siguiente", []))
+                }
+            }
+            
+            total_actualizaciones += updates_dia
+            fecha_actual += timedelta(days=1)
+        
+        resultado = {
+            "mensaje": f"Recálculo de rango completado: {fecha_inicio} a {fecha_fin}",
+            "total_actualizaciones": total_actualizaciones,
+            "dias_procesados": len(resultados_por_fecha),
+            "resultados_por_fecha": resultados_por_fecha
+        }
+        
+        print(f"✅ Recálculo de rango completado: {total_actualizaciones} actualizaciones en {len(resultados_por_fecha)} días")
+        return resultado
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error en recálculo de rango: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error en recálculo: {str(e)}"
+        )
+
 @router.post("/recalcular-dependencias/{fecha}", status_code=status.HTTP_200_OK)
 def recalcular_dependencias_fecha(
     fecha: date,
@@ -401,7 +481,8 @@ def recalcular_dependencias_fecha(
         total_updates = (
             len(resultados_completos.get("tesoreria", [])) + 
             len(resultados_completos.get("pagaduria", [])) + 
-            len(resultados_completos.get("cross_dashboard", []))
+            len(resultados_completos.get("cross_dashboard", [])) +
+            len(resultados_completos.get("propagacion_dia_siguiente", []))
         )
         
         resultado = {
@@ -411,7 +492,8 @@ def recalcular_dependencias_fecha(
             "detalles": {
                 "tesoreria_updates": len(resultados_completos.get("tesoreria", [])),
                 "pagaduria_updates": len(resultados_completos.get("pagaduria", [])),
-                "cross_dashboard_updates": len(resultados_completos.get("cross_dashboard", []))
+                "cross_dashboard_updates": len(resultados_completos.get("cross_dashboard", [])),
+                "propagacion_dia_siguiente": len(resultados_completos.get("propagacion_dia_siguiente", []))
             },
             "resultados_completos": resultados_completos
         }

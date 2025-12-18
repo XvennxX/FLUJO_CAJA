@@ -4,7 +4,7 @@ import { useAuth } from './AuthContext';
 // Configuración de sesión (sincronizada con backend)
 const SESSION_CONFIG = {
   INACTIVITY_TIMEOUT: 60 * 60 * 1000, // 1 hora en milliseconds
-  TOKEN_LIFETIME: 120 * 60 * 1000, // 2 horas - debe coincidir con backend
+  TOKEN_LIFETIME: 60 * 60 * 1000, // 1 hora - debe coincidir con backend
   WARNING_TIMES: [
     { time: 50 * 60 * 1000, message: '10 minutos', type: 'warning' as const },
     { time: 58 * 60 * 1000, message: '2 minutos', type: 'critical' as const }

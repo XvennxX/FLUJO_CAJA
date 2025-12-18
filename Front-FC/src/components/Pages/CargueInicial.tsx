@@ -23,14 +23,20 @@ interface CuentaBancaria {
   compania_id: number;
   compania_nombre: string;
   moneda: string;
-  saldo_inicial_usd?: number;
+  // Saldos diferenciados por tipo de moneda
+  saldo_inicial_usd?: number;  // Para cuentas multi-moneda
+  saldo_inicial_cop?: number;  // Para cuentas solo COP
   saldo_dia_anterior_usd?: number;
+  saldo_dia_anterior_cop?: number;
 }
 
 interface SaldoModificacion {
   cuenta_id: number;
+  moneda: string;  // Agregar info de moneda
   saldo_inicial_usd?: number;
+  saldo_inicial_cop?: number;
   saldo_dia_anterior_usd?: number;
+  saldo_dia_anterior_cop?: number;
 }
 
 interface TRM {
@@ -114,7 +120,7 @@ function CargueInicial() {
     }
   };
 
-  // Función para calcular COP desde USD
+  // Función para calcular COP desde USD (dividido entre 1000 para mostrar cifras manejables)
   const calcularCOP = (usd: number): number => {
     if (!trm) return 0;
     return (usd * trm.valor) / 1000;
@@ -141,14 +147,41 @@ function CargueInicial() {
       const saldosResponse = await fetch(`http://localhost:8000/api/v1/saldo-inicial/obtener-saldos?fecha=${fecha}`, { headers });
       const saldosData = saldosResponse.ok ? await saldosResponse.json() : [];
 
+      // Filtrar cuentas: mostrar solo USD para multi-moneda, COP para cuentas solo pesos
+      const cuentasFiltradas = cuentasData.filter((cuenta: any) => {
+        // Si es USD, mostrar (es la editable para multi-moneda)
+        if (cuenta.moneda === 'USD') return true;
+        
+        // Si es COP, verificar si existe una versión USD de la misma cuenta
+        if (cuenta.moneda === 'COP') {
+          const tieneVersionUSD = cuentasData.some((c: any) => 
+            c.cuenta_bancaria_id === cuenta.cuenta_bancaria_id && c.moneda === 'USD'
+          );
+          // Solo mostrar COP si NO tiene versión USD (es decir, es cuenta solo pesos)
+          return !tieneVersionUSD;
+        }
+        
+        return false;
+      });
+
       // Combinar datos
-      const cuentasConSaldos = cuentasData.map((cuenta: any) => {
+      const cuentasConSaldos = cuentasFiltradas.map((cuenta: any) => {
         const saldoExistente = saldosData.find((s: any) => s.cuenta_id === cuenta.id);
-        return {
-          ...cuenta,
-          saldo_inicial_usd: saldoExistente?.saldo_inicial || 0,
-          saldo_dia_anterior_usd: saldoExistente?.saldo_dia_anterior || 0
-        };
+        const esMultiMoneda = cuenta.moneda === 'USD'; // Las cuentas USD son multi-moneda
+        
+        if (esMultiMoneda) {
+          return {
+            ...cuenta,
+            saldo_inicial_usd: saldoExistente?.saldo_inicial || 0,
+            saldo_dia_anterior_usd: saldoExistente?.saldo_dia_anterior || 0
+          };
+        } else {
+          return {
+            ...cuenta,
+            saldo_inicial_cop: saldoExistente?.saldo_inicial || 0,
+            saldo_dia_anterior_cop: saldoExistente?.saldo_dia_anterior || 0
+          };
+        }
       });
 
       setCuentas(cuentasConSaldos);
@@ -181,18 +214,30 @@ function CargueInicial() {
     setSaldosModificados(new Map()); // Limpiar modificaciones
   };
 
-  // Manejar cambio de saldos USD
-  const handleSaldoUSDChange = (cuentaId: number, tipo: 'tesoreria' | 'pagaduria', valor: string) => {
+  // Manejar cambio de saldos (USD para multi-moneda, COP para cuentas solo pesos)
+  const handleSaldoChange = (cuentaId: number, tipo: 'tesoreria' | 'pagaduria', valor: string) => {
     const valorNumerico = parseFloat(valor) || 0;
+    const cuenta = cuentas.find(c => c.id === cuentaId);
+    if (!cuenta) return;
+    
+    const esMultiMoneda = cuenta.moneda === 'USD';
     
     setSaldosModificados(prev => {
       const nuevo = new Map(prev);
-      const existente = nuevo.get(cuentaId) || { cuenta_id: cuentaId };
+      const existente = nuevo.get(cuentaId) || { cuenta_id: cuentaId, moneda: cuenta.moneda };
       
       if (tipo === 'tesoreria') {
-        existente.saldo_inicial_usd = valorNumerico;
+        if (esMultiMoneda) {
+          existente.saldo_inicial_usd = valorNumerico;
+        } else {
+          existente.saldo_inicial_cop = valorNumerico;
+        }
       } else {
-        existente.saldo_dia_anterior_usd = valorNumerico;
+        if (esMultiMoneda) {
+          existente.saldo_dia_anterior_usd = valorNumerico;
+        } else {
+          existente.saldo_dia_anterior_cop = valorNumerico;
+        }
       }
       
       nuevo.set(cuentaId, existente);
@@ -200,16 +245,22 @@ function CargueInicial() {
     });
 
     // Actualizar también el estado local para reflejar el cambio en UI
-    setCuentas(prev => prev.map(cuenta => 
-      cuenta.id === cuentaId 
+    setCuentas(prev => prev.map(c => 
+      c.id === cuentaId 
         ? {
-            ...cuenta,
+            ...c,
             ...(tipo === 'tesoreria' 
-              ? { saldo_inicial_usd: valorNumerico }
-              : { saldo_dia_anterior_usd: valorNumerico }
+              ? (esMultiMoneda 
+                  ? { saldo_inicial_usd: valorNumerico }
+                  : { saldo_inicial_cop: valorNumerico }
+                )
+              : (esMultiMoneda 
+                  ? { saldo_dia_anterior_usd: valorNumerico }
+                  : { saldo_dia_anterior_cop: valorNumerico }
+                )
             )
           }
-        : cuenta
+        : c
     ));
   };
 
@@ -231,12 +282,26 @@ function CargueInicial() {
         ...(token && { Authorization: `Bearer ${token}` })
       };
 
-      // Convertir USD a COP usando TRM
-      const modificaciones = Array.from(saldosModificados.values()).map(mod => ({
-        cuenta_id: mod.cuenta_id,
-        saldo_inicial: mod.saldo_inicial_usd ? calcularCOP(mod.saldo_inicial_usd) : undefined,
-        saldo_dia_anterior: mod.saldo_dia_anterior_usd ? calcularCOP(mod.saldo_dia_anterior_usd) : undefined
-      }));
+      // Procesar modificaciones según el tipo de moneda
+      const modificaciones = Array.from(saldosModificados.values()).map(mod => {
+        const esMultiMoneda = mod.moneda === 'USD';
+        
+        if (esMultiMoneda) {
+          // Para cuentas multi-moneda (USD), enviar valores USD originales (SIN conversión)
+          return {
+            cuenta_id: mod.cuenta_id,
+            saldo_inicial: mod.saldo_inicial_usd, // Enviar USD original
+            saldo_dia_anterior: mod.saldo_dia_anterior_usd // Enviar USD original
+          };
+        } else {
+          // Para cuentas solo COP, usar directamente los valores en pesos
+          return {
+            cuenta_id: mod.cuenta_id,
+            saldo_inicial: mod.saldo_inicial_cop,
+            saldo_dia_anterior: mod.saldo_dia_anterior_cop
+          };
+        }
+      });
 
       const response = await fetch('http://localhost:8000/api/v1/saldo-inicial/guardar-cargue-inicial', {
         method: 'POST',
@@ -435,13 +500,13 @@ function CargueInicial() {
                     Compañía
                   </th>
                   <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                    Saldo Inicial Tesorería (USD)
+                    Saldo Inicial Tesorería
                   </th>
                   <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                     Equivalente COP
                   </th>
                   <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                    Saldo Día Anterior Pagaduría (USD)
+                    Saldo Día Anterior Pagaduría  
                   </th>
                   <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                     Equivalente COP
@@ -487,40 +552,62 @@ function CargueInicial() {
                       </td>
                       <td className="px-6 py-4 text-center">
                         <div className="flex items-center justify-center">
-                          <DollarSign className="w-4 h-4 text-green-500 mr-1" />
+                          <DollarSign className={`w-4 h-4 mr-1 ${
+                            cuenta.moneda === 'USD' ? 'text-green-500' : 'text-yellow-600'
+                          }`} />
                           <input
                             type="number"
                             step="0.01"
-                            value={cuenta.saldo_inicial_usd || ''}
-                            onChange={(e) => handleSaldoUSDChange(cuenta.id, 'tesoreria', e.target.value)}
+                            value={cuenta.moneda === 'USD' 
+                              ? (cuenta.saldo_inicial_usd || '') 
+                              : (cuenta.saldo_inicial_cop || '')
+                            }
+                            onChange={(e) => handleSaldoChange(cuenta.id, 'tesoreria', e.target.value)}
                             className="w-32 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-center"
                             placeholder="0.00"
-                            disabled={!trm}
+                            disabled={cuenta.moneda === 'USD' && !trm}
                           />
+                          <span className="ml-1 text-xs font-medium text-gray-500">
+                            {cuenta.moneda}
+                          </span>
                         </div>
                       </td>
                       <td className="px-6 py-4 text-center">
                         <span className="text-sm font-medium text-gray-900 dark:text-white">
-                          ${calcularCOP(cuenta.saldo_inicial_usd || 0).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          {cuenta.moneda === 'USD' 
+                            ? `$${calcularCOP(cuenta.saldo_inicial_usd || 0).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                            : `$${(cuenta.saldo_inicial_cop || 0).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                          } COP
                         </span>
                       </td>
                       <td className="px-6 py-4 text-center">
                         <div className="flex items-center justify-center">
-                          <TrendingUp className="w-4 h-4 text-blue-500 mr-1" />
+                          <TrendingUp className={`w-4 h-4 mr-1 ${
+                            cuenta.moneda === 'USD' ? 'text-blue-500' : 'text-purple-600'
+                          }`} />
                           <input
                             type="number"
                             step="0.01"
-                            value={cuenta.saldo_dia_anterior_usd || ''}
-                            onChange={(e) => handleSaldoUSDChange(cuenta.id, 'pagaduria', e.target.value)}
+                            value={cuenta.moneda === 'USD' 
+                              ? (cuenta.saldo_dia_anterior_usd || '') 
+                              : (cuenta.saldo_dia_anterior_cop || '')
+                            }
+                            onChange={(e) => handleSaldoChange(cuenta.id, 'pagaduria', e.target.value)}
                             className="w-32 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-center"
                             placeholder="0.00"
-                            disabled={!trm}
+                            disabled={cuenta.moneda === 'USD' && !trm}
                           />
+                          <span className="ml-1 text-xs font-medium text-gray-500">
+                            {cuenta.moneda}
+                          </span>
                         </div>
                       </td>
                       <td className="px-6 py-4 text-center">
                         <span className="text-sm font-medium text-gray-900 dark:text-white">
-                          ${calcularCOP(cuenta.saldo_dia_anterior_usd || 0).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          {cuenta.moneda === 'USD' 
+                            ? `$${calcularCOP(cuenta.saldo_dia_anterior_usd || 0).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                            : `$${(cuenta.saldo_dia_anterior_cop || 0).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                          } COP
                         </span>
                       </td>
                     </tr>

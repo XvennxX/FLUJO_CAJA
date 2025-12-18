@@ -11,7 +11,7 @@ from app.models.transacciones_flujo_caja import TransaccionFlujoCaja, AreaTransa
 from app.models.conceptos_flujo_caja import ConceptoFlujoCaja
 
 
-router = APIRouter(prefix="/gmf", tags=["GMF"])
+router = APIRouter()
 
 
 class GMFRecalcRequest(BaseModel):
@@ -25,7 +25,12 @@ class GMFRecalcRequest(BaseModel):
 def recalculate_gmf(payload: GMFRecalcRequest, db: Session = Depends(get_db)):
     """Forzar recálculo y persistencia de GMF para una fecha/cuenta.
     Utiliza la configuración vigente (última activa en o antes de la fecha; si no, la última activa).
+    Después de calcular GMF, recalcula SUB-TOTAL TESORERÍA para incluir el nuevo GMF.
     """
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"🔄 [API GMF] Recálculo solicitado: fecha={payload.fecha}, cuenta={payload.cuenta_bancaria_id}")
+    
     service = DependenciasFlujoCajaService(db)
     result = service.recalcular_gmf(
         fecha=payload.fecha,
@@ -33,9 +38,32 @@ def recalculate_gmf(payload: GMFRecalcRequest, db: Session = Depends(get_db)):
         usuario_id=payload.usuario_id,
         compania_id=payload.compania_id,
     )
-    db.commit()
+    
     if not result:
+        logger.warning(f"⚠️ [API GMF] No se pudo recalcular GMF")
         raise HTTPException(status_code=404, detail="No hay configuración GMF vigente o base de componentes para la fecha")
+    
+    logger.info(f"✅ [API GMF] Recálculo GMF exitoso: monto={result.get('monto_nuevo', 0)}")
+    
+    # 🔄 IMPORTANTE: Después de actualizar GMF, recalcular SUB-TOTAL TESORERÍA
+    # para que incluya el nuevo valor de GMF
+    logger.info(f"🔄 [API GMF] Recalculando SUB-TOTAL TESORERÍA para incluir nuevo GMF...")
+    try:
+        from app.schemas.transacciones_flujo_caja import AreaTransaccion as AreaTransaccionSchema
+        dependencias_result = service.procesar_dependencias_avanzadas(
+            fecha=payload.fecha,
+            area=AreaTransaccionSchema.tesoreria,
+            concepto_modificado_id=49,  # GMF fue modificado
+            cuenta_id=payload.cuenta_bancaria_id,
+            compania_id=payload.compania_id,
+            usuario_id=payload.usuario_id
+        )
+        logger.info(f"✅ [API GMF] SUB-TOTAL TESORERÍA recalculado: {len(dependencias_result)} dependencias procesadas")
+    except Exception as e:
+        logger.error(f"⚠️ [API GMF] Error recalculando dependencias: {e}")
+    
+    db.commit()
+    
     return {"ok": True, "data": result}
 
 

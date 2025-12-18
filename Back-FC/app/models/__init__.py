@@ -10,6 +10,7 @@ from .notificaciones import Notificacion
 from .trm import TRM
 from .conciliacion_contable import ConciliacionContable
 from .gmf_config import GMFConfig
+from .cuatro_por_mil_config import CuatroPorMilConfig
 
 __all__ = [
     "Usuario",
@@ -23,5 +24,6 @@ __all__ = [
     "Notificacion",
     "TRM",
     "ConciliacionContable",
-    "GMFConfig"
+    "GMFConfig",
+    "CuatroPorMilConfig"
 ]

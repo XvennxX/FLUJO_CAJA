@@ -1,20 +1,37 @@
-fastapi==0.104.1
-uvicorn[standard]==0.24.0
-sqlalchemy==2.0.23
-pymysql==1.1.0
-python-jose[cryptography]==3.3.0
-passlib[bcrypt]==1.7.4
-python-multipart==0.0.6
-pydantic==2.5.0
-pydantic-settings==2.1.0
-python-dotenv==1.0.0
-alembic==1.13.1
-python-dateutil==2.8.2
-typing-extensions==4.8.0
-email-validator==2.1.0
-requests==2.31.0
-schedule==1.2.0
-beautifulsoup4==4.12.2
-lxml==4.9.4
-websockets==12.0
-openpyxl==3.1.2
+# Dependencias principales compatibles - Sistema de Flujo de Caja
+# Versiones actualizadas para evitar errores de compilación
+
+# Framework web
+fastapi>=0.104.1
+uvicorn[standard]>=0.24.0
+
+# Base de datos
+sqlalchemy>=2.0.23
+pymysql>=1.1.0
+alembic>=1.13.1
+
+# Autenticación y seguridad
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4
+bcrypt==4.0.1
+
+# Validación y configuración
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+python-dotenv>=1.0.0
+email-validator>=2.1.0
+
+# Utilidades
+python-multipart>=0.0.6
+python-dateutil>=2.8.2
+typing-extensions>=4.8.0
+requests>=2.31.0
+schedule>=1.2.0
+
+# Procesamiento de datos
+beautifulsoup4>=4.12.2
+lxml>=4.9.4
+openpyxl>=3.1.2
+
+# WebSockets
+websockets>=12.0

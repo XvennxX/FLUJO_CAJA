@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     # Security
     secret_key: str = os.getenv("SECRET_KEY", "your-secret-key-here")
     algorithm: str = os.getenv("ALGORITHM", "HS256")
-    access_token_expire_minutes: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "120"))  # 2 horas para coincidir con frontend
+    access_token_expire_minutes: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))  # 1 hora para coincidir con frontend
     
     # CORS
     # Permitir configurar orígenes por variable de entorno separada por comas

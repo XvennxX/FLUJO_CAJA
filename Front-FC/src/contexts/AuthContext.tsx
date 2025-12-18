@@ -15,8 +15,8 @@ interface AuthContextType {
 
 // Configuración de renovación de token
 const TOKEN_CONFIG = {
-  EXPIRE_TIME: 120 * 60 * 1000, // 2 horas en ms (debe coincidir con backend)
-  REFRESH_BEFORE: 10 * 60 * 1000, // Renovar 10 minutos antes de expirar
+  EXPIRE_TIME: 60 * 60 * 1000, // 1 hora en ms (debe coincidir con backend)
+  REFRESH_BEFORE: 5 * 60 * 1000, // Renovar 5 minutos antes de expirar
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);

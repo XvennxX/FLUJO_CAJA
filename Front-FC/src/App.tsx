@@ -7,6 +7,7 @@ import Sidebar from './components/Layout/Sidebar';
 import Header from './components/Layout/Header';
 import Dashboard from './components/Pages/Dashboard';
 import DashboardAdmin from './components/Pages/DashboardAdmin';
+import DashboardMesa from './components/Pages/DashboardMesa';
 import DashboardPagaduria from './components/Pages/DashboardPagaduria';
 import DashboardTesoreria from './components/Pages/DashboardTesoreria';
 import Conciliacion from './components/Pages/Conciliacion';
@@ -56,6 +57,9 @@ const AppContent: React.FC = () => {
     switch (page) {
       case 'panel':
         if (user?.role === 'administrador') {
+          return 'SIFCO - Dashboards de Flujo Diario';
+        }
+        if (user?.role === 'mesa_dinero') {
           return 'SIFCO - Dashboards de Flujo Diario';
         }
         if (user?.role === 'pagaduria') {
@@ -109,6 +113,9 @@ const AppContent: React.FC = () => {
         if (user?.role === 'administrador') {
           return 'Accede a los dashboards actualizados de Tesorería y Pagaduría';
         }
+        if (user?.role === 'mesa_dinero') {
+          return 'Visualización completa de ambos dashboards en modo solo lectura';
+        }
         if (user?.role === 'pagaduria') {
           return 'Panel especializado para gestión de pagos y presupuestos';
         }
@@ -153,6 +160,9 @@ const AppContent: React.FC = () => {
         if (user?.role === 'administrador') {
           return <DashboardAdmin />;
         }
+        if (user?.role === 'mesa_dinero') {
+          return <DashboardMesa />;
+        }
         if (user?.role === 'pagaduria') {
           return <DashboardPagaduria />;
         }
@@ -189,6 +199,9 @@ const AppContent: React.FC = () => {
       default:
         if (user?.role === 'administrador') {
           return <DashboardAdmin />;
+        }
+        if (user?.role === 'mesa_dinero') {
+          return <DashboardMesa />;
         }
         if (user?.role === 'pagaduria') {
           return <DashboardPagaduria />;
